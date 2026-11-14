@@ -1,5 +1,6 @@
 # Connect Antigravity IDE to TechBot_Blender_MCP (Windows)
 
+**Version checked:** Antigravity IDE 2.7.0. This guide uses Google's documented Antigravity IDE MCP configuration flow. Google may adjust menu placement between builds; the configuration-file paths below are the reliable fallback.
 
 This guide configures Antigravity IDE to launch the TechBot_Blender_MCP MCP service locally using **STDIO**. The service connects to the Blender extension's local bridge on port `9877`.
 
@@ -80,16 +81,20 @@ If `uv` is available in PATH, you may use `"command": "uv"` instead of the full 
 
 **Do not replace the complete configuration file blindly.** If it already contains other MCP servers or settings, add only the `techbot-blender-mcp` entry inside the existing `mcpServers` object and preserve the other entries.
 
-## 3. Add it in Antigravity IDE
+## 3. Add it in Antigravity IDE 2.7.0
+
+### Recommended UI route
 
 1. Open the Agent side panel.
-2. Click the **…** menu and select **MCP Servers**.
+2. Click the **…** menu at the top of the Agent side panel and select **MCP Servers**.
 3. Select **Manage MCP Servers**.
 4. Choose **View raw config** to open `mcp_config.json`.
 5. Add the `techbot-blender-mcp` entry from Step 2 inside the existing top-level `mcpServers` object.
-6. Save the file and return to the MCP Servers view. Use its refresh/reload control if needed.
+6. Save the file and return to the MCP Servers view. Use its refresh control if available.
 
-The global Windows configuration file is:
+### Direct file route if the menu is missing
+
+You can open the global configuration file directly in a text editor. The current documented global Windows path is:
 
 ```text
 %USERPROFILE%\\.gemini\\config\\mcp_config.json
@@ -102,6 +107,8 @@ Antigravity also supports a workspace-level configuration at:
 ```
 
 Use the global file if you want the server available across projects. Use the workspace file if it should be available only in that workspace.
+
+If the server does not appear after saving, return to Antigravity and refresh the MCP server list. If the UI does not expose a refresh action or the server remains missing, run **Developer: Reload Window** from the Command Palette, then check the MCP server list again. Do not create a second configuration file at a legacy path; use the current global or workspace path above.
 
 Official reference: [Google Antigravity MCP documentation](https://antigravity.google/docs/ide/mcp).
 
