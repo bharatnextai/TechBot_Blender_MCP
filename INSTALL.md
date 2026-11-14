@@ -44,6 +44,6 @@ The extension can be installed before you configure an AI client. Installing the
 
 The Blender extension is installed in the steps above. To use it with an AI client, you must also run the external MCP service and configure that client. This is an additional setup and may require Python 3.10 or later, `uv`, and editing the AI client's MCP configuration.
 
-See the [ChatGPT installation instructions](docs/publication/CHATGPT_INSTALLATION.md) and the [Security guide](https://github.com/bharatnextai/TechBot_Blender_MCP/blob/main/docs/publication/SECURITY.md).
+See the [ChatGPT installation instructions](docs/CHATGPT_INSTALLATION.md) and the [Security guide](https://github.com/bharatnextai/TechBot_Blender_MCP/blob/main/docs/publication/SECURITY.md).
 
 Start with read-only inspection tools. Keep approval enforcement enabled for scene mutations unless a trusted human explicitly approves the specific request in Blender. Never treat client-supplied approval flags as authorization.
