@@ -10,8 +10,26 @@ Before configuring ChatGPT:
 
 - Install Blender and install/enable the TechBot_Blender_MCP extension.
 - Open Blender and start the extension's local bridge. The bridge port used by this configuration is `9877`.
-- Install `uv` for Windows and know the full path to `uv.exe`.
-- Have the TechBot_Blender_MCP project/service directory available locally. The example below uses `D:\\Blender-Ollama-Addon\\blender-universal-mcp`.
+- Install `uv` for Windows.
+- Download the repository source ZIP and extract it as described below.
+
+### Download and extract the MCP service source
+
+1. Open the [TechBot_Blender_MCP GitHub repository](https://github.com/bharatnextai/TechBot_Blender_MCP).
+2. Select **Code → Download ZIP**.
+3. Extract the downloaded ZIP to a folder of your choice.
+4. Open the extracted folder. It will typically be named `TechBot_Blender_MCP-main` when downloading the `main` branch.
+5. Confirm that the extracted folder directly contains the `mcp_service` directory, along with folders such as `blender_addon` and `shared`.
+
+For example, if you extracted the ZIP under `D:\\Downloads`, the project root may be:
+
+```text
+D:\\Downloads\\TechBot_Blender_MCP-main
+```
+
+Your drive and extraction location may be different. Use the actual full path on your computer. **Use the extracted project root (the folder containing `mcp_service`), not the `mcp_service` subfolder itself.**
+
+> **Important — two different ZIP downloads:** The repository's **Code → Download ZIP** archive provides the MCP service source used in this guide. The installable Blender extension is a separate package downloaded from the repository's **Releases → Assets**. Do not use the source ZIP as the Blender extension installer.
 
 The MCP service entry point is `mcp_service.app`.
 
@@ -29,15 +47,15 @@ The labels and placement of controls can vary between ChatGPT versions. The conf
 
 ### Command to launch
 
-Enter the full path to your Windows `uv.exe`.
+Enter the command `uv` if it is available in your Windows PATH. Otherwise, enter the full path to your actual `uv.exe` installation.
 
-Example from the verified setup:
+Example of a machine-specific path:
 
 ```text
-C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WinGet\\Links\\uv.exe
+C:\\Users\\YourWindowsUser\\AppData\\Local\\Microsoft\\WinGet\\Links\\uv.exe
 ```
 
-This is a machine-specific example. If `uv.exe` is installed elsewhere on your computer, use its actual full path.
+Replace `YourWindowsUser` with your Windows account folder name, and adjust the path if `uv.exe` is installed elsewhere. You can check whether Windows can find `uv` by running `where.exe uv` in Command Prompt.
 
 ### Arguments
 
@@ -67,32 +85,35 @@ Do not paste the whole argument list into one field when the ChatGPT UI provides
 
 ### Environment variables
 
-Add these three entries:
+Add these three entries. For `PYTHONPATH`, enter the actual extracted project root from Step 1.
 
 | Name | Value |
 |---|---|
-| `PYTHONPATH` | `D:\\Blender-Ollama-Addon\\blender-universal-mcp` |
+| `PYTHONPATH` | `D:\\Downloads\\TechBot_Blender_MCP-main` |
 | `PYTHONUNBUFFERED` | `1` |
 | `UMCP_BRIDGE_PORT` | `9877` |
 
-**Important:** Change `PYTHONPATH` to the actual folder containing the `mcp_service` package on your computer. Do not point it to the `blender_addon` subfolder.
+**Important:** The `PYTHONPATH` example above is only an example. Replace it with the full path to your own extracted `TechBot_Blender_MCP-main` folder (or whatever the extracted folder is named). That folder must directly contain `mcp_service`. Do not point `PYTHONPATH` to the `mcp_service` or `blender_addon` subfolder.
 
 ### Working directory
 
-Set the working directory to the project/service root:
+Set the working directory to the **same extracted project root** used for `PYTHONPATH`.
+
+Example:
 
 ```text
-D:\\Blender-Ollama-Addon\\blender-universal-mcp
+D:\\Downloads\\TechBot_Blender_MCP-main
 ```
 
-Use your actual project location if it is different.
+Replace this example with your actual extracted folder path. The `PYTHONPATH` and **Working directory** values should point to the same project root.
 
 ## 4. Save and connect
 
 1. Review the command, all 17 arguments, the three environment variables, and the working directory.
-2. Click **Save**.
-3. If the server entry was already configured, use the available reconnect/reload action or restart ChatGPT if necessary.
-4. Keep Blender open with the TechBot_Blender_MCP extension enabled and its bridge running.
+2. Confirm that `PYTHONPATH` and **Working directory** both point to the extracted project root containing `mcp_service`.
+3. Click **Save**.
+4. If the server entry was already configured, use the available reconnect/reload action or restart ChatGPT if necessary.
+5. Keep Blender open with the TechBot_Blender_MCP extension enabled and its bridge running.
 
 ## 5. Verify the connection
 
@@ -108,8 +129,9 @@ Do not begin with a scene-changing request. Test read-only inspection first.
 
 ## 6. Troubleshooting
 
-- **The server does not start:** Confirm that the Command to launch points to an existing `uv.exe` and that the working directory exists.
-- **The module cannot be found:** Confirm that `PYTHONPATH` points to the project root containing the `mcp_service` directory.
+- **The server does not start:** Confirm that the Command to launch resolves to an existing `uv.exe` and that the working directory exists.
+- **The module cannot be found:** Confirm that `PYTHONPATH` points to the extracted project root and that the `mcp_service` directory exists directly inside it.
+- **The server starts but cannot find the project:** Check that **Working directory** is set to the same extracted project root as `PYTHONPATH`.
 - **The MCP server connects but Blender is unreachable:** Open Blender, enable the extension, start its bridge, and confirm that the configured bridge port is `9877`.
 - **The server reports a dependency error:** Check that `uv` can access the required Python packages and that the package constraints in the Arguments list have not been altered.
 - **The configuration was edited but the old status remains:** Save the entry and reconnect/reload the MCP server, or restart ChatGPT.
@@ -129,5 +151,6 @@ Do not begin with a scene-changing request. Test read-only inspection first.
 | MCP module | `mcp_service.app` |
 | Blender bridge port | `9877` |
 | Bridge timeout | `15.0` seconds |
-| Working directory | Project root containing `mcp_service` |
+| `PYTHONPATH` | Extracted project root containing `mcp_service` |
+| Working directory | Same extracted project root |
 | Human approval | Keep enabled in Blender |
