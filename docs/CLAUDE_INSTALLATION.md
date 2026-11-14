@@ -100,14 +100,19 @@ Official references: [Anthropic MCP documentation](https://docs.anthropic.com/en
 
 ## 4. Verify the connection
 
-1. Confirm the server is connected and its tools are listed.
-2. Start with a read-only request:
+1. Confirm `techbot-blender-mcp` is shown as connected/running and its tools are listed.
+2. Keep Blender open with the extension enabled and the bridge listening on port `9877`.
+3. Start with this read-only request:
 
 ```text
-Use TechBot_Blender_MCP to inspect the current Blender scene and report the object names. Do not modify the scene.
+Use techbot-blender-mcp to inspect the current Blender scene. Call the read-only get_scene_summary tool and report the scene name, frame, active object, active camera, and object names. Do not modify the scene.
 ```
 
-Keep Blender open with the extension enabled and bridge running during this test.
+### Verified client result
+
+**Claude Desktop — verified (November 2026):** the MCP server appeared in Desktop's Extensions view with status **Running**. A live read-only `get_scene_summary` request returned the default Blender scene: `Scene`, frame 1 (range 1–250 at 24 fps), Metric units, one collection (`Collection`), active object `Cube`, active camera `Camera`, and three objects (`Cube`, `Camera`, `Light`). No scene changes were made.
+
+This records a successful read-only integration check; it does not certify scene-mutating workflows.
 
 ## 5. Troubleshooting
 
