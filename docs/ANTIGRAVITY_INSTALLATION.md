@@ -114,14 +114,19 @@ Official reference: [Google Antigravity MCP documentation](https://antigravity.g
 
 ## 4. Verify the connection
 
-1. Confirm the server is connected and its tools are listed.
-2. Start with a read-only request:
+1. Confirm the server is connected/running and its tools are listed.
+2. Keep Blender open with the extension enabled and the bridge listening on port `9877`.
+3. Start with this read-only request:
 
 ```text
-Use TechBot_Blender_MCP to inspect the current Blender scene and report the object names. Do not modify the scene.
+Use techbot-blender-mcp to inspect the current Blender scene. Call the read-only get_scene_summary tool and report the scene name, frame, active object, active camera, and object names. Do not modify the scene.
 ```
 
-Keep Blender open with the extension enabled and bridge running during this test.
+### Verified client result
+
+**Antigravity IDE 2.7.0 — verified (November 2026):** the MCP service initialized over STDIO, registered its tools, and successfully executed the read-only `get_scene_summary` request through the Blender bridge at `127.0.0.1:9877`. The returned scene contained `Cube`, `Camera`, and `Light`. The tested setup used the global configuration at `%USERPROFILE%\\.gemini\\config\\mcp_config.json`, the extracted project root for both `--directory` and `PYTHONPATH`, and `uv.exe` as the command.
+
+This records a successful read-only integration check; it does not certify scene-mutating workflows.
 
 ## 5. Troubleshooting
 
