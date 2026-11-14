@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "universal_mcp"
+name = "TechBot_Blender_MCP"
+version = "1.0.0"
+tagline = "TechBot Blender MCP server & client integration for Blender"
+maintainer = "Techbot81"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+license = [
+    "SPDX:MIT",
+]
+
+[permissions]
+network = "Local loopback communication with external MCP service"

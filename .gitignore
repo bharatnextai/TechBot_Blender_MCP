@@ -1,0 +1,64 @@
+# Python environments, bytecode, and test/lint caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_basetemp/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local credentials and private runtime configuration
+.env
+.env.*
+!.env.example
+*config.local.*
+*.credentials.local.*
+*.secrets.local.*
+*.tokens.local.*
+
+# Blender project files, backups, and generated media
+*.blend
+*.blend1
+*.blend2
+*.blend@*
+*.mp4
+*.mov
+*.wav
+*.flac
+*.exr
+*.png
+*.jpg
+*.jpeg
+
+# Explicit allowlists for intentional, reviewed fixtures and documentation images
+!docs/assets/
+!docs/assets/**
+!blender_addon/universal_mcp/assets/
+!blender_addon/universal_mcp/assets/**
+!tests/fixtures/
+!tests/fixtures/**
+
+# Local evidence, backups, temporary work, and release bundles
+/backups/
+/scratch/
+/evidence/
+/blender_dragon_Model/
+/Rabbit_Forest_Cinematic.blend
+/Rabbit_Forest_Cinematic.blend1
+/Rabbit_Forest_Cinematic.mp4
+/dist/*.zip
+/dist/*.zip.sha256
+*.log
+
+# Raw verification captures (retain curated Markdown reports separately)
+/docs/verification/**/processes.json
+/docs/verification/**/listener*.json
+/docs/verification/**/config_at_start.json
+/docs/verification/**/latest_preflight.json
+/docs/verification/**/calls.json
+/docs/verification/**/independent.json
+/docs/verification/**/result.json
+/docs/verification/**/catalog.json
