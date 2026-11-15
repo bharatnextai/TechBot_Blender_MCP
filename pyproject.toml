@@ -39,6 +39,10 @@ dev = [
 [project.scripts]
 blender-mcp-service = "mcp_service.app:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mcp_service*", "shared*", "blender_addon*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
