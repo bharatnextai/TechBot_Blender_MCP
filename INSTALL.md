@@ -79,6 +79,51 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-TechBot-Blen
 
 The uninstaller prompts before proceeding. It creates timestamped backups before editing client JSON and preserves unrelated MCP server entries. By default it targets Claude Desktop, Antigravity, and Cursor configurations; ChatGPT is not removed because this installer does not create a local ChatGPT STDIO entry. Use `-SkipBlender` to leave the Blender extension installed, `-KeepLogs` to preserve logs, or `-WorkspacePaths` to include workspace-level client configurations.
 
+## 1B. macOS native installer (Apple Silicon & Intel)
+
+For macOS users on Apple Silicon (M1/M2/M3/M4) or Intel Macs who want the Blender extension, external MCP service, and client configurations set up together without requiring PowerShell, use the native macOS shell installer.
+
+### Download the macOS installer
+
+Download both scripts from the repository:
+
+- [Install-TechBot-Blender-MCP-macOS.sh](https://raw.githubusercontent.com/bharatnextai/TechBot_Blender_MCP/main/Install-TechBot-Blender-MCP-macOS.sh)
+- [Uninstall-TechBot-Blender-MCP-macOS.sh](https://raw.githubusercontent.com/bharatnextai/TechBot_Blender_MCP/main/Uninstall-TechBot-Blender-MCP-macOS.sh)
+
+Save them in the same folder and make them executable:
+
+```bash
+chmod +x Install-TechBot-Blender-MCP-macOS.sh Uninstall-TechBot-Blender-MCP-macOS.sh
+```
+
+### Run the interactive installer
+
+```bash
+./Install-TechBot-Blender-MCP-macOS.sh
+```
+
+The wizard guides you through:
+1. Detecting Apple Silicon / Intel architecture and macOS version.
+2. Locating `/Applications/Blender.app`, Python 3.10+, and `uv`.
+3. Selecting AI clients (Claude Desktop, Cursor IDE, Antigravity IDE, ChatGPT).
+4. Verifying SHA-256 sidecars before installation.
+5. Deploying the extension via native CLI: `blender --command extension install-file -r user_default -e <zip>`.
+6. Creating an isolated virtual environment at `~/Library/Application Support/TechBot_Blender_MCP/venv`.
+7. Non-destructively merging client configurations with timestamped backups.
+8. Non-destructive smoke verification (bridge socket check, dependencies, tool count) and generating `TechBot-Installation-Report.md`.
+
+For full details, see the [macOS Installation Guide](docs/MACOS_INSTALLATION.md), [macOS Client Configuration Reference](docs/MACOS_CLIENT_CONFIGURATION.md), and [macOS Troubleshooting Guide](docs/MACOS_TROUBLESHOOTING.md).
+
+### Uninstall on macOS
+
+To remove the Blender extension, virtual environment, and client MCP server entries on macOS:
+
+```bash
+./Uninstall-TechBot-Blender-MCP-macOS.sh
+```
+
+Use `--keep-logs` to preserve `install.log` and `uninstall.log` while cleaning components.
+
 ## 2. Install the ZIP in Blender
 
 1. Start Blender (the tested release target is Blender **5.2.2 LTS**).
@@ -115,6 +160,9 @@ See the client-specific setup guides:
 - [Antigravity IDE](docs/ANTIGRAVITY_INSTALLATION.md)
 - [Claude Desktop](docs/CLAUDE_INSTALLATION.md)
 - [Cursor IDE](docs/CURSOR_INSTALLATION.md)
+- [macOS Installation & Service Guide](docs/MACOS_INSTALLATION.md)
+- [macOS Client Configuration Reference](docs/MACOS_CLIENT_CONFIGURATION.md)
+- [macOS Troubleshooting Guide](docs/MACOS_TROUBLESHOOTING.md)
 
 Also review the [Security guide](https://github.com/bharatnextai/TechBot_Blender_MCP/blob/main/docs/publication/SECURITY.md).
 

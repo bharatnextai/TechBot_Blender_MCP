@@ -43,11 +43,13 @@
 
 | Requirement | Supported Version | Notes |
 | :--- | :--- | :--- |
-| **Operating System** | Windows 10 / 11 (x64) | PowerShell 5.1 or PowerShell Core 7+ |
+| **Operating System** | Windows 10 / 11 (x64) or macOS (Apple Silicon / Intel) | Windows: PowerShell 5.1+; macOS: Native bash script |
 | **Blender** | Blender 5.2.2 LTS (or 4.2+) | Must support native extension system (`bpy.ops.extensions`) |
 | **Python** | Python 3.10, 3.11, 3.12, 3.13 | Required for the external MCP service |
 | **Package Manager** | `uv` (Recommended) or `pip` | `uv` automatically accelerates venv creation and dependency installs |
 | **AI Clients** | Claude Desktop, Cursor IDE, Antigravity IDE | Optional: ChatGPT Desktop via Streamable HTTP tunnel |
+
+> **macOS Users:** A native bash installer is provided for Apple Silicon and Intel Macs. See the [macOS Installation Guide](MACOS_INSTALLATION.md), [macOS Client Configuration](MACOS_CLIENT_CONFIGURATION.md), and [macOS Troubleshooting](MACOS_TROUBLESHOOTING.md).
 
 ---
 
