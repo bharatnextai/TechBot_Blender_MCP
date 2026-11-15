@@ -14,6 +14,71 @@ This guide is for Blender users installing the add-on. You do **not** need to do
 
 If the Releases page has no ZIP under **Assets**, the installable package has not been attached to that release yet.
 
+
+
+## 1A. Windows interactive installer (recommended for MCP clients)
+
+For Windows users who want the MCP service and supported local client configurations set up together, use the repository's interactive PowerShell installer. It is separate from Blender's built-in **Install from Disk** flow above.
+
+### Download the installer
+
+Download these two scripts from the repository:
+
+- [Install-TechBot-Blender-MCP.ps1](https://raw.githubusercontent.com/bharatnextai/TechBot_Blender_MCP/main/Install-TechBot-Blender-MCP.ps1)
+- [Uninstall-TechBot-Blender-MCP.ps1](https://raw.githubusercontent.com/bharatnextai/TechBot_Blender_MCP/main/Uninstall-TechBot-Blender-MCP.ps1)
+
+Save them in the same folder. The installer downloads the release packages itself; do not use GitHub's **Code → Download ZIP** archive as an installer package.
+
+### Run the interactive installer
+
+1. Open PowerShell.
+2. Change directory to the folder where you saved the installer.
+3. Run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-TechBot-Blender-MCP.ps1
+```
+
+The wizard guides you through installation mode, client selection/detection, install and download locations, package verification, Blender extension deployment, service environment setup, client configuration, and a Markdown installation report.
+
+The default service install directory is:
+
+```text
+%LOCALAPPDATA%\TechBot_Blender_MCP
+```
+
+You can review the script's parameters with:
+
+```powershell
+Get-Help .\Install-TechBot-Blender-MCP.ps1 -Full
+```
+
+For unattended use, the script supports `-NonInteractive`, `-InstallMode`, `-Clients`, `-InstallDir`, `-BlenderPath`, `-PythonPath`, and other documented parameters. Use `-SkipBlender`, `-SkipService`, or `-SkipClients` only when you intentionally want to omit that part of setup.
+
+### Client support and ChatGPT note
+
+The installer can configure local MCP client entries for Claude Desktop, Cursor IDE, and Antigravity IDE. ChatGPT Desktop is detected separately, but the script does **not** write a local STDIO configuration for it; its report marks it unconfigured and explains that a remote Streamable HTTP endpoint with a secure HTTPS tunnel is required. See the [ChatGPT connection guide](docs/CHATGPT_INSTALLATION.md) for the documented manual connection details.
+
+The installer backs up existing client configuration files before modifying them. Review the generated installation report and verify that existing unrelated MCP server entries remain present.
+
+### Required release assets
+
+The installer expects a published GitHub Release containing both:
+- An installable Blender extension ZIP named `TechBot_Blender_MCP-*.zip` and its SHA-256 sidecar.
+- An external service distribution ZIP named `TechBot_Blender_MCP_Service-*.zip` and its SHA-256 sidecar.
+
+It deliberately does not substitute GitHub's automatically generated source-code ZIP for the external service distribution. If the selected release does not contain these assets and checksum files, the installer stops with an error. The default release tag in the script is `v1.0.0-rc2`; use `-ReleaseTag` to select another published release.
+
+### Uninstall
+
+To remove the Blender extension, local service files, and selected local client configuration entries, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-TechBot-Blender-MCP.ps1
+```
+
+The uninstaller prompts before proceeding. It creates timestamped backups before editing client JSON and preserves unrelated MCP server entries. By default it targets Claude Desktop, Antigravity, and Cursor configurations; ChatGPT is not removed because this installer does not create a local ChatGPT STDIO entry. Use `-SkipBlender` to leave the Blender extension installed, `-KeepLogs` to preserve logs, or `-WorkspacePaths` to include workspace-level client configurations.
+
 ## 2. Install the ZIP in Blender
 
 1. Start Blender (the tested release target is Blender **5.2.2 LTS**).
