@@ -1,39 +1,67 @@
-# Connect ChatGPT to TechBot_Blender_MCP (Windows)
+# Connect ChatGPT Desktop to TechBot_Blender_MCP
 
-This guide documents the **local MCP server configuration verified in ChatGPT Settings** for TechBot_Blender_MCP. It uses the MCP server's **STDIO** transport. ChatGPT launches the local process; no public HTTP endpoint or tunnel is needed for this configuration.
+This guide documents the **local STDIO MCP server configuration** for ChatGPT Desktop / OpenAI Codex.
 
-> This guide covers the ChatGPT connection only. Install and enable the TechBot_Blender_MCP Blender extension separately before connecting.
+ChatGPT Desktop runs local MCP servers over standard STDIO pipes via its configuration file at:
+- **Windows:** `%USERPROFILE%\.codex\config.toml` (e.g. `C:\Users\<YourUsername>\.codex\config.toml`)
+- **macOS:** `~/.codex/config.toml`
 
-## 1. Prerequisites
+> **Automatic Configuration:** The interactive installers (`Install-TechBot-Blender-MCP.ps1` on Windows and `Install-TechBot-Blender-MCP-macOS.sh` on macOS) configure this automatically! You only need to follow manual configuration below if you are setting up without the installer.
 
-Before configuring ChatGPT:
+---
 
-- Install Blender and install/enable the TechBot_Blender_MCP extension.
-- Open Blender and start the extension's local bridge. The bridge port used by this configuration is `9877`.
-- Install `uv` for Windows.
-- Download the repository source ZIP and extract it as described below.
+## Method 1: Automatic Setup via Interactive Installer (Recommended)
 
-### Download and extract the MCP service source
+1. Run the interactive installer:
+   - **Windows:** `powershell.exe -ExecutionPolicy Bypass -File .\Install-TechBot-Blender-MCP.ps1`
+   - **macOS:** `./Install-TechBot-Blender-MCP-macOS.sh`
+2. When prompted to select AI clients, select **ChatGPT Desktop**.
+3. The installer automatically detects your environment, creates the isolated Python venv, and non-destructively merges the `[mcp_servers.techbot-blender-mcp]` block into your `.codex\config.toml` while preserving all other settings and MCP servers.
+4. Open ChatGPT Desktop and verify under **Settings → MCP Servers**.
 
-1. Open the [TechBot_Blender_MCP GitHub repository](https://github.com/bharatnextai/TechBot_Blender_MCP).
-2. Select **Code → Download ZIP**.
-3. Extract the downloaded ZIP to a folder of your choice.
-4. Open the extracted folder. It will typically be named `TechBot_Blender_MCP-main` when downloading the `main` branch.
-5. Confirm that the extracted folder directly contains the `mcp_service` directory, along with folders such as `blender_addon` and `shared`.
+---
 
-For example, if you extracted the ZIP under `D:\\Downloads`, the project root may be:
+## Method 2: Direct Configuration via `config.toml`
 
-```text
-D:\\Downloads\\TechBot_Blender_MCP-main
+Open your `config.toml` file (create it if it does not exist):
+- **Windows:** `notepad "%USERPROFILE%\.codex\config.toml"`
+- **macOS:** `nano ~/.codex/config.toml`
+
+Add the following section:
+
+### Windows:
+```toml
+[mcp_servers.techbot-blender-mcp]
+enabled = true
+command = 'C:\Users\<YourUsername>\AppData\Local\TechBot_Blender_MCP\venv\Scripts\python.exe'
+args = ["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "9877", "--bridge-timeout", "15.0"]
+cwd = 'C:\Users\<YourUsername>\AppData\Local\TechBot_Blender_MCP\service'
+
+[mcp_servers.techbot-blender-mcp.env]
+PYTHONPATH = 'C:\Users\<YourUsername>\AppData\Local\TechBot_Blender_MCP\service'
+PYTHONUNBUFFERED = "1"
+UMCP_BRIDGE_PORT = "9877"
 ```
 
-Your drive and extraction location may be different. Use the actual full path on your computer. **Use the extracted project root (the folder containing `mcp_service`), not the `mcp_service` subfolder itself.**
+### macOS:
+```toml
+[mcp_servers.techbot-blender-mcp]
+enabled = true
+command = '/Users/<YourUsername>/Library/Application Support/TechBot_Blender_MCP/venv/bin/python'
+args = ["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "9877", "--bridge-timeout", "15.0"]
+cwd = '/Users/<YourUsername>/Library/Application Support/TechBot_Blender_MCP/service'
 
-> **Important — two different ZIP downloads:** The repository's **Code → Download ZIP** archive provides the MCP service source used in this guide. The installable Blender extension is a separate package downloaded from the repository's **Releases → Assets**. Do not use the source ZIP as the Blender extension installer.
+[mcp_servers.techbot-blender-mcp.env]
+PYTHONPATH = '/Users/<YourUsername>/Library/Application Support/TechBot_Blender_MCP/service'
+PYTHONUNBUFFERED = "1"
+UMCP_BRIDGE_PORT = "9877"
+```
 
-The MCP service entry point is `mcp_service.app`.
+---
 
-## 2. Open ChatGPT MCP settings
+## Method 3: Manual In-App Settings (GUI)
+
+If you prefer to configure manually within ChatGPT Desktop:
 
 1. Open ChatGPT.
 2. Open **Settings**.

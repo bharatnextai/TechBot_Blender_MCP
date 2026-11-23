@@ -319,6 +319,12 @@ print("REMOVE_OK")
         $mockAgyConfig = Join-Path $mockAntigravityWorkspace ".agents\mcp_config.json"
         Set-Content -Path $mockAgyConfig -Value '{"mcpServers": {"existingAgyServer": {"command": "echo"}}}' -Encoding utf8
 
+        # Mock ChatGPT/Codex config.toml
+        $mockCodexDir = Join-Path $testDir "mock_codex"
+        New-Item -ItemType Directory -Path $mockCodexDir -Force | Out-Null
+        $mockCodexConfig = Join-Path $mockCodexDir "config.toml"
+        Set-Content -Path $mockCodexConfig -Value "model = 'gpt-5'`n[other_servers.test]`ncmd = 'echo'" -Encoding utf8
+
         # Run Install-TechBot-Blender-MCP.ps1 in isolated sandbox
         $argsList = @(
             "-ExecutionPolicy", "Bypass",
@@ -331,6 +337,7 @@ print("REMOVE_OK")
             "-CursorWorkspacePath", $mockCursorWorkspace,
             "-AntigravityScope", "workspace",
             "-AntigravityWorkspacePath", $mockAntigravityWorkspace,
+            "-ChatGPTConfigPath", $mockCodexConfig,
             "-ReportPath", $mockReportPath,
             "-SkipBlender",
             "-NonInteractive"
@@ -363,8 +370,17 @@ print("REMOVE_OK")
         if ($reportText -notmatch "ChatGPT Desktop Status") {
             throw "Report does not document ChatGPT status"
         }
-        if ($reportText -notmatch "UNCONFIGURED") {
-            throw "Report does not properly flag ChatGPT as UNCONFIGURED"
+        if ($reportText -notmatch "CONFIGURED") {
+            throw "Report does not properly document ChatGPT as CONFIGURED"
+        }
+
+        # Verify ChatGPT TOML configuration merge
+        $codexText = Get-Content -Path $mockCodexConfig -Raw
+        if ($codexText -notmatch '\[mcp_servers\.techbot-blender-mcp\]') {
+            throw "TechBot server was not merged into ChatGPT config.toml!"
+        }
+        if ($codexText -notmatch 'model\s*=\s*[''"]gpt-5[''"]') {
+            throw "Pre-existing setting in config.toml was lost during merge!"
         }
 
         # Verify Cursor workspace configuration merge
@@ -795,6 +811,55 @@ Write-Output 'SAFE_PY_OK'
         $run = powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $testScript
         if ($run -notmatch "SAFE_PY_OK") {
             throw "Safe Python check failed: $run"
+        }
+    }
+
+    # --------------------------------------------------------------------------
+    # Test 17: Non-Destructive TOML Merge & Clean for ChatGPT config.toml
+    # --------------------------------------------------------------------------
+    Assert-Test "Non-destructive TOML merge into ~/.codex/config.toml and clean by uninstaller" {
+        $tomlDir = Join-Path $testDir "toml_test"
+        New-Item -ItemType Directory -Path $tomlDir -Force | Out-Null
+        $tomlFile = Join-Path $tomlDir "config.toml"
+
+        $initialToml = @"
+model = "gpt-5"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.existing_custom_server]
+enabled = true
+command = "node"
+args = ["server.js"]
+"@
+        Set-Content -Path $tomlFile -Value $initialToml -Encoding utf8
+
+        . $installerScript
+        $realPy = (Get-Command 'python.exe' | Select-Object -First 1).Source
+        $bak = Merge-ClientConfiguration -ConfigPath $tomlFile -VenvPythonPath $realPy -Port 9877 -Timeout 15.0 -ServiceDir (Join-Path $testDir "service")
+
+        $mergedText = Get-Content -Path $tomlFile -Raw
+        if ($mergedText -notmatch '\[mcp_servers\.techbot-blender-mcp\]') {
+            throw "techbot-blender-mcp was not merged into TOML config!"
+        }
+        if ($mergedText -notmatch 'model = "gpt-5"') {
+            throw "Existing 'model' key was corrupted or lost during TOML merge!"
+        }
+        if ($mergedText -notmatch 'existing_custom_server') {
+            throw "Existing server was lost during TOML merge!"
+        }
+
+        # Test uninstaller clean on TOML
+        . $uninstallerScript
+        Remove-ClientServerEntry -ConfigPath $tomlFile -InstallDir (Join-Path $testDir "mock_install")
+        $cleanedText = Get-Content -Path $tomlFile -Raw
+        if ($cleanedText -match 'techbot-blender-mcp') {
+            throw "techbot-blender-mcp should have been removed from TOML config by uninstaller!"
+        }
+        if ($cleanedText -notmatch 'existing_custom_server') {
+            throw "existing_custom_server should have been preserved by uninstaller!"
+        }
+        if ($cleanedText -notmatch 'model = "gpt-5"') {
+            throw "model key should have been preserved by uninstaller!"
         }
     }
 

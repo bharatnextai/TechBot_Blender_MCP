@@ -62,9 +62,9 @@ Get-Help .\Install-TechBot-Blender-MCP.ps1 -Full
 
 For unattended use, the script supports `-NonInteractive`, `-InstallMode`, `-Clients`, `-InstallDir`, `-BlenderPath`, `-PythonPath`, and other documented parameters. Use `-SkipBlender`, `-SkipService`, or `-SkipClients` only when you intentionally want to omit that part of setup.
 
-### Client support and ChatGPT note
+### Client support and ChatGPT configuration
 
-The installer can configure local MCP client entries for Claude Desktop, Cursor IDE, and Antigravity IDE automatically. ChatGPT Desktop is also detected and fully supports local STDIO connections; however, because ChatGPT Desktop manages server entries via its graphical settings menu (**Settings → MCP Servers**) rather than a JSON file on disk, the installer displays and reports the exact command, arguments, environment variables, and working directory to enter into ChatGPT Settings. See the [ChatGPT connection guide](docs/CHATGPT_INSTALLATION.md) for full step-by-step instructions.
+The installer can configure local MCP client entries for Claude Desktop, Cursor IDE, Antigravity IDE, and ChatGPT Desktop automatically. For ChatGPT Desktop (Windows Store / macOS), the installer automatically merges the local STDIO MCP configuration into `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows) while preserving existing models, preferences, and sibling MCP servers. The configuration parameters can also be verified directly in ChatGPT's settings menu (**Settings → MCP Servers**). See the [ChatGPT connection guide](docs/CHATGPT_INSTALLATION.md) for full details.
 
 The installer backs up existing client configuration files before modifying them. Review the generated installation report and verify that existing unrelated MCP server entries remain present.
 
@@ -84,7 +84,7 @@ To remove the Blender extension, local service files, and selected local client 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall-TechBot-Blender-MCP.ps1
 ```
 
-The uninstaller prompts before proceeding. It creates timestamped backups before editing client JSON and preserves unrelated MCP server entries. By default it targets Claude Desktop, Antigravity, and Cursor configurations; ChatGPT is not removed because this installer does not create a local ChatGPT STDIO entry. Use `-SkipBlender` to leave the Blender extension installed, `-KeepLogs` to preserve logs, or `-WorkspacePaths` to include workspace-level client configurations.
+The uninstaller prompts before proceeding. It creates timestamped backups before editing client JSON/TOML files and preserves unrelated MCP server entries. By default it targets Claude Desktop, Cursor IDE, Antigravity IDE, and ChatGPT Desktop configurations. Use `-SkipBlender` to leave the Blender extension installed, `-KeepLogs` to preserve logs, or `-WorkspacePaths` to include workspace-level client configurations.
 
 ## 1B. macOS native installer (Apple Silicon & Intel)
 

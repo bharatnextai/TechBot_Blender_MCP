@@ -35,9 +35,10 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "TechBot_Blender_MCP"),
-    [string[]]$Clients = @("claude", "antigravity", "cursor"),
+    [string[]]$Clients = @("claude", "antigravity", "cursor", "chatgpt"),
     [string[]]$WorkspacePaths = @(),
     [string]$BlenderPath = "",
+    [string]$ChatGPTConfigPath = "",
     [switch]$SkipBlender,
     [switch]$KeepLogs,
     [switch]$Force
@@ -159,7 +160,57 @@ function Remove-ClientServerEntry {
     Write-Log "Created backup at $backupPath" "INFO"
 
     $cleanScript = [System.IO.Path]::GetTempFileName() + ".py"
-    $pyClean = @'
+    $isToml = $ConfigPath.EndsWith(".toml", [System.StringComparison]::OrdinalIgnoreCase)
+
+    if ($isToml) {
+        $pyClean = @'
+import os
+import re
+import sys
+
+config_path = sys.argv[1]
+server_key = "techbot-blender-mcp"
+
+if not os.path.isfile(config_path):
+    print("NO_FILE")
+    sys.exit(0)
+
+try:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
+        lines = f.read().splitlines()
+except Exception as exc:
+    print(f"PARSE_ERROR:{exc}")
+    sys.exit(1)
+
+out = []
+skip = False
+removed = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("["):
+        m = re.match(r"^\[\s*mcp_servers\.[\"']?techbot[-_]blender[-_]mcp[\"']?(\.|\s*\])", stripped)
+        if m:
+            skip = True
+            removed = True
+            continue
+        else:
+            skip = False
+    if not skip:
+        out.append(line)
+
+cleaned = "\n".join(out).strip() + "\n"
+with open(config_path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(cleaned)
+
+if removed:
+    print(f"REMOVED_KEY:{server_key}")
+else:
+    print(f"KEY_NOT_FOUND:{server_key}")
+
+print("CLEAN_JSON_SUCCESS")
+'@
+    } else {
+        $pyClean = @'
 import json
 import os
 import sys
@@ -211,6 +262,7 @@ with open(config_path, "w", encoding="utf-8", newline="\n") as f:
 
 print("CLEAN_JSON_SUCCESS")
 '@
+    }
     Set-Content -Path $cleanScript -Value $pyClean -Encoding utf8
 
     try {
@@ -253,6 +305,12 @@ function Cleanup-AIClients {
             }
             "cursor" {
                 $targetPaths += (Join-Path $env:USERPROFILE ".cursor\mcp.json")
+            }
+            "chatgpt" {
+                $codexToml = if ($ChatGPTConfigPath) { $ChatGPTConfigPath } else { Join-Path $env:USERPROFILE ".codex\config.toml" }
+                if (Test-Path $codexToml) {
+                    $targetPaths += $codexToml
+                }
             }
         }
     }

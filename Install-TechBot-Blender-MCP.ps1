@@ -105,6 +105,7 @@ param(
     [string]$CursorWorkspacePath = "",
     [ValidateSet("global", "workspace")] [string]$AntigravityScope = "global",
     [string]$AntigravityWorkspacePath = "",
+    [string]$ChatGPTConfigPath = "",
     [int]$BridgePort = 9877,
     [double]$BridgeTimeout = 15.0,
     [string]$BlenderPath = "",
@@ -555,15 +556,26 @@ function Detect-AntigravityClient {
 }
 
 function Detect-ChatGPTClient {
+    param([string]$ExplicitConfigPath)
+
+    $codexToml = if ($ExplicitConfigPath) { $ExplicitConfigPath } else { Join-Path $env:USERPROFILE ".codex\config.toml" }
+
     $info = [ordered]@{
         Id              = "chatgpt"
         DisplayName     = "ChatGPT Desktop"
         Installed       = $false
         Version         = "Not detected"
         ExecutablePath  = ""
-        ConfigPath      = "In-App Settings: Settings -> MCP Servers (Local STDIO)"
+        ConfigPath      = $codexToml
         Candidates      = @()
         Selected        = $false
+    }
+
+    if (Test-Path $codexToml) {
+        $info.Installed = $true
+        $info.Version = "Codex Desktop"
+    } elseif (Test-Path (Join-Path $env:USERPROFILE ".codex")) {
+        $info.Installed = $true
     }
 
     # 1. Windows Store Package (MSIX / Appx) - Primary distribution on Windows 10/11
@@ -685,7 +697,7 @@ function Detect-AllClients {
     $clients = @()
     $clients += Detect-ClaudeClient
     $clients += Detect-CursorClient
-    $clients += Detect-ChatGPTClient
+    $clients += (Detect-ChatGPTClient -ExplicitConfigPath $ChatGPTConfigPath)
     $clients += Detect-AntigravityClient
 
     $script:ReportData.DetectedClients = $clients
@@ -1723,7 +1735,8 @@ function Merge-ClientConfiguration {
         [Parameter(Mandatory = $true)] [string]$ConfigPath,
         [Parameter(Mandatory = $true)] [string]$VenvPythonPath,
         [Parameter(Mandatory = $true)] [int]$Port,
-        [Parameter(Mandatory = $true)] [double]$Timeout
+        [Parameter(Mandatory = $true)] [double]$Timeout,
+        [string]$ServiceDir = ""
     )
 
     $parentDir = Split-Path -Parent $ConfigPath
@@ -1732,6 +1745,82 @@ function Merge-ClientConfiguration {
     }
 
     $bakFile = Backup-ConfigFile -ConfigPath $ConfigPath
+    $isToml = $ConfigPath.EndsWith(".toml", [System.StringComparison]::OrdinalIgnoreCase)
+
+    if ($isToml) {
+        $mergeScript = [System.IO.Path]::GetTempFileName() + ".py"
+        $pyToml = @'
+import os
+import re
+import sys
+
+config_path = sys.argv[1]
+venv_python = sys.argv[2]
+bridge_port = sys.argv[3]
+bridge_timeout = sys.argv[4]
+service_dir = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else os.path.dirname(config_path)
+server_key = "techbot-blender-mcp"
+
+content = ""
+if os.path.isfile(config_path):
+    try:
+        with open(config_path, "r", encoding="utf-8-sig") as f:
+            content = f.read()
+    except Exception as exc:
+        print(f"PARSE_ERROR: Could not read existing TOML config: {exc}")
+        sys.exit(2)
+
+lines = content.splitlines()
+out = []
+skip = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("["):
+        m = re.match(r"^\[\s*mcp_servers\.[\"']?techbot[-_]blender[-_]mcp[\"']?(\.|\s*\])", stripped)
+        if m:
+            skip = True
+            continue
+        else:
+            skip = False
+    if not skip:
+        out.append(line)
+
+cleaned = "\n".join(out).rstrip()
+
+new_section = f"""
+
+[mcp_servers.{server_key}]
+enabled = true
+command = '{venv_python}'
+args = ["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "{bridge_port}", "--bridge-timeout", "{bridge_timeout}"]
+cwd = '{service_dir}'
+
+[mcp_servers.{server_key}.env]
+PYTHONPATH = '{service_dir}'
+PYTHONUNBUFFERED = "1"
+UMCP_BRIDGE_PORT = "{bridge_port}"
+"""
+
+final_content = (cleaned + new_section).strip() + "\n"
+
+with open(config_path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(final_content)
+
+print("MERGE_TOML_SUCCESS")
+'@
+        Set-Content -Path $mergeScript -Value $pyToml -Encoding utf8
+
+        try {
+            $mergeOutput = & $VenvPythonPath $mergeScript $ConfigPath $VenvPythonPath ($Port.ToString()) ($Timeout.ToString()) $ServiceDir 2>&1
+            if ($mergeOutput -notmatch "MERGE_TOML_SUCCESS") {
+                throw "Failed to update TOML configuration at $ConfigPath. Error: $mergeOutput"
+            }
+            Write-Log "Successfully merged 'techbot-blender-mcp' in $ConfigPath" "SUCCESS"
+            return $bakFile
+        } finally {
+            Remove-Item -Path $mergeScript -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     $mergeScript = [System.IO.Path]::GetTempFileName() + ".py"
     $pyMerge = @'
@@ -1866,47 +1955,14 @@ function Configure-SelectedAIClients {
                 if ($bak) { $script:ReportData.ClientBackups["Antigravity IDE"] = $bak }
             }
             "chatgpt" {
-                Write-Log "Processing ChatGPT Desktop integration..." "INFO"
+                Write-Log "Configuring ChatGPT Desktop at $($c.ConfigPath)..." "INFO"
                 $servicePath = Join-Path $InstallDir "service"
-                Write-Host @"
-
--------------------------------------------------------------------------------
-ChatGPT Desktop Local MCP Integration (STDIO):
-ChatGPT Desktop supports local MCP connections over STDIO (no tunnel required).
-Because ChatGPT manages servers via its in-app Settings UI instead of a
-JSON file on disk, configure it in ChatGPT Settings:
-
-1. Open ChatGPT Desktop -> Settings -> MCP Servers -> Add Server
-2. Enter the following parameters:
-   Name:              TechBot_Blender_MCP
-   Command to launch: uv (or full path: "$VenvPythonPath")
-   Arguments (enter each argument separately):
-     run
-     --no-project
-     --with
-     mcp<2,>=1.25.0
-     --with
-     pydantic>=2.0.0
-     --with
-     httpx>=0.25.0
-     python
-     -m
-     mcp_service.app
-     --transport
-     stdio
-     --bridge-port
-     $Port
-     --bridge-timeout
-     $Timeout
-   Environment variables:
-     PYTHONPATH:        $servicePath
-     PYTHONUNBUFFERED:  1
-     UMCP_BRIDGE_PORT:  $Port
-   Working directory:   $servicePath
-3. Click Save and connect. See docs/CHATGPT_INSTALLATION.md for details.
--------------------------------------------------------------------------------
-"@ -ForegroundColor Cyan
-                $script:ReportData.ChatGPTStatus = "UNCONFIGURED (Manual In-App Configuration in ChatGPT Settings Required)"
+                $bak = Merge-ClientConfiguration -ConfigPath $c.ConfigPath -VenvPythonPath $VenvPythonPath -Port $Port -Timeout $Timeout -ServiceDir $servicePath
+                $script:ReportData.ConfiguredClients += "ChatGPT Desktop"
+                $script:ReportData.ClientConfigPaths["ChatGPT Desktop"] = $c.ConfigPath
+                if ($bak) { $script:ReportData.ClientBackups["ChatGPT Desktop"] = $bak }
+                $script:ReportData.ChatGPTStatus = "CONFIGURED ($($c.ConfigPath))"
+                Write-Log "ChatGPT Desktop local MCP configuration merged into $($c.ConfigPath)" "SUCCESS"
             }
         }
     }
@@ -2061,14 +2117,15 @@ function Generate-InstallationReport {
 
 ### ChatGPT Desktop Status
 > **$($script:ReportData.ChatGPTStatus)**  
-> ChatGPT Desktop communicates over local STDIO pipes configured via ChatGPT in-app Settings (**Settings -> MCP Servers**).  
+> ChatGPT Desktop communicates over local STDIO pipes configured via `config.toml` and ChatGPT in-app Settings (**Settings -> MCP Servers**).  
 > Follow the verified instructions in [`docs/CHATGPT_INSTALLATION.md`](docs/CHATGPT_INSTALLATION.md).
 
 | Setting | Value |
 | :--- | :--- |
-| **Server Name** | `TechBot_Blender_MCP` |
-| **Command** | `uv` *(or `$($script:ReportData.VenvPython)`)* |
-| **Arguments** | `run`, `--no-project`, `--with`, `mcp<2,>=1.25.0`, `--with`, `pydantic>=2.0.0`, `--with`, `httpx>=0.25.0`, `python`, `-m`, `mcp_service.app`, `--transport`, `stdio`, `--bridge-port`, `$($script:ReportData.BridgePort)`, `--bridge-timeout`, `15.0` |
+| **Server Name** | `techbot-blender-mcp` |
+| **Configuration Path** | `$($script:ReportData.ClientConfigPaths["ChatGPT Desktop"])` |
+| **Command** | `$($script:ReportData.VenvPython)` |
+| **Arguments** | `["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "$($script:ReportData.BridgePort)", "--bridge-timeout", "15.0"]` |
 | **Environment Variables** | `PYTHONPATH`: `$((Join-Path $script:ReportData.InstallDir "service"))`<br>`PYTHONUNBUFFERED`: `1`<br>`UMCP_BRIDGE_PORT`: `$($script:ReportData.BridgePort)` |
 | **Working Directory** | `$((Join-Path $script:ReportData.InstallDir "service"))` |
 

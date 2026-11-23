@@ -24,6 +24,7 @@ CURSOR_SCOPE="global"
 CURSOR_WORKSPACE_PATH=""
 ANTIGRAVITY_SCOPE="global"
 ANTIGRAVITY_WORKSPACE_PATH=""
+CHATGPT_CONFIG_PATH=""
 BRIDGE_PORT=9877
 BRIDGE_TIMEOUT=15.0
 BLENDER_PATH=""
@@ -155,6 +156,7 @@ Options:
   --cursor-workspace <path>       Workspace folder if cursor-scope is 'workspace'
   --antigravity-scope <scope>     Antigravity scope: 'global' or 'workspace' (default: 'global')
   --antigravity-workspace <path>  Workspace folder if antigravity-scope is 'workspace'
+  --chatgpt-config-path <path>    Explicit path to ChatGPT/Codex config.toml (default: '~/.codex/config.toml')
   --bridge-port <port>            Blender bridge port (default: 9877)
   --bridge-timeout <sec>          Bridge connection timeout in seconds (default: 15.0)
   --blender-path <path>           Explicit path to Blender.app or Blender executable
@@ -202,6 +204,8 @@ parse_args() {
                 ANTIGRAVITY_SCOPE="$2"; shift 2 ;;
             --antigravity-workspace)
                 ANTIGRAVITY_WORKSPACE_PATH="$2"; shift 2 ;;
+            --chatgpt-config-path)
+                CHATGPT_CONFIG_PATH="$2"; shift 2 ;;
             --bridge-port)
                 BRIDGE_PORT="$2"; shift 2 ;;
             --bridge-timeout)
@@ -546,8 +550,15 @@ detect_all_clients() {
     CLIENT_CHATGPT_INSTALLED=0
     CLIENT_CHATGPT_VERSION="Not detected"
     CLIENT_CHATGPT_EXE=""
-    CLIENT_CHATGPT_CONFIG="In-App Settings: Settings -> MCP Servers (Local STDIO)"
+    CLIENT_CHATGPT_CONFIG="${CHATGPT_CONFIG_PATH:-${HOME}/.codex/config.toml}"
     CLIENT_CHATGPT_SELECTED=0
+
+    if [[ -f "${CLIENT_CHATGPT_CONFIG}" ]]; then
+        CLIENT_CHATGPT_INSTALLED=1
+        CLIENT_CHATGPT_VERSION="Codex Desktop"
+    elif [[ -d "${HOME}/.codex" ]]; then
+        CLIENT_CHATGPT_INSTALLED=1
+    fi
 
     if [[ -d "/Applications/ChatGPT.app" ]]; then
         CLIENT_CHATGPT_INSTALLED=1
@@ -591,8 +602,9 @@ select_clients_wizard() {
         [[ ${CLIENT_CLAUDE_INSTALLED} -eq 1 ]] && CLIENT_CLAUDE_SELECTED=1
         [[ ${CLIENT_CURSOR_INSTALLED} -eq 1 ]] && CLIENT_CURSOR_SELECTED=1
         [[ ${CLIENT_ANTIGRAVITY_INSTALLED} -eq 1 ]] && CLIENT_ANTIGRAVITY_SELECTED=1
+        [[ ${CLIENT_CHATGPT_INSTALLED} -eq 1 ]] && CLIENT_CHATGPT_SELECTED=1
         # If none detected, select Cursor and Antigravity by default
-        if [[ ${CLIENT_CLAUDE_SELECTED} -eq 0 ]] && [[ ${CLIENT_CURSOR_SELECTED} -eq 0 ]] && [[ ${CLIENT_ANTIGRAVITY_SELECTED} -eq 0 ]]; then
+        if [[ ${CLIENT_CLAUDE_SELECTED} -eq 0 ]] && [[ ${CLIENT_CURSOR_SELECTED} -eq 0 ]] && [[ ${CLIENT_ANTIGRAVITY_SELECTED} -eq 0 ]] && [[ ${CLIENT_CHATGPT_SELECTED} -eq 0 ]]; then
             CLIENT_CURSOR_SELECTED=1
             CLIENT_ANTIGRAVITY_SELECTED=1
         fi
@@ -618,9 +630,10 @@ select_clients_wizard() {
     ch_agy="$(read_user_input "${p_agy}" "${d_agy}")"
     [[ "${ch_agy}" =~ ^[Yy]$ ]] && CLIENT_ANTIGRAVITY_SELECTED=1
 
-    local p_gpt="Display ChatGPT Remote HTTPS Tunnel Instructions? (y/N)"
+    local p_gpt="Configure ChatGPT Desktop? ($([[ ${CLIENT_CHATGPT_INSTALLED} -eq 1 ]] && echo "Y/n" || echo "y/N"))"
+    local d_gpt="$([[ ${CLIENT_CHATGPT_INSTALLED} -eq 1 ]] && echo "Y" || echo "N")"
     local ch_gpt
-    ch_gpt="$(read_user_input "${p_gpt}" "N")"
+    ch_gpt="$(read_user_input "${p_gpt}" "${d_gpt}")"
     [[ "${ch_gpt}" =~ ^[Yy]$ ]] && CLIENT_CHATGPT_SELECTED=1
 }
 
@@ -1018,10 +1031,80 @@ merge_client_json() {
     local venv_py="$2"
     local port="$3"
     local timeout="$4"
+    local service_dir="${5:-${INSTALL_DIR}/service}"
 
     mkdir -p "$(dirname "${config_path}")"
     local bak
     bak="$(backup_config_file "${config_path}")"
+
+    if [[ "${config_path}" == *.toml ]]; then
+        local py_toml_result
+        py_toml_result="$("${PYTHON_BIN}" -c '
+import os, re, sys
+
+config_path = sys.argv[1]
+venv_python = sys.argv[2]
+bridge_port = sys.argv[3]
+bridge_timeout = sys.argv[4]
+service_dir = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] else os.path.dirname(config_path)
+server_key = "techbot-blender-mcp"
+
+content = ""
+if os.path.isfile(config_path):
+    try:
+        with open(config_path, "r", encoding="utf-8-sig") as f:
+            content = f.read()
+    except Exception as exc:
+        print(f"PARSE_ERROR: Could not read existing TOML config: {exc}")
+        sys.exit(2)
+
+lines = content.splitlines()
+out = []
+skip = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("["):
+        m = re.match(r"^\[\s*mcp_servers\.[\"'\x27]?techbot[-_]blender[-_]mcp[\"'\x27]?(\.|\s*\])", stripped)
+        if m:
+            skip = True
+            continue
+        else:
+            skip = False
+    if not skip:
+        out.append(line)
+
+cleaned = "\n".join(out).rstrip()
+
+new_section = f"""
+
+[mcp_servers.{server_key}]
+enabled = true
+command = "{venv_python}"
+args = ["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "{bridge_port}", "--bridge-timeout", "{bridge_timeout}"]
+cwd = "{service_dir}"
+
+[mcp_servers.{server_key}.env]
+PYTHONPATH = "{service_dir}"
+PYTHONUNBUFFERED = "1"
+UMCP_BRIDGE_PORT = "{bridge_port}"
+"""
+
+final_content = (cleaned + new_section).strip() + "\n"
+
+with open(config_path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(final_content)
+
+print("MERGE_TOML_SUCCESS")
+' "${config_path}" "${venv_py}" "${port}" "${timeout}" "${service_dir}" 2>&1)"
+
+        if [[ "${py_toml_result}" != *"MERGE_TOML_SUCCESS"* ]]; then
+            log_error "Failed to update TOML configuration at ${config_path}: ${py_toml_result}"
+            return 1
+        fi
+
+        log_success "Successfully merged 'techbot-blender-mcp' in ${config_path}"
+        return 0
+    fi
 
     local py_merge_result
     py_merge_result="$("${PYTHON_BIN}" -c '
@@ -1140,46 +1223,11 @@ configure_selected_ai_clients() {
     fi
 
     if [[ ${CLIENT_CHATGPT_SELECTED} -eq 1 ]]; then
-        log_info "Processing ChatGPT Desktop integration..."
-        cat << EOF
-
--------------------------------------------------------------------------------
-ChatGPT Desktop Local MCP Integration (STDIO):
-ChatGPT Desktop supports local MCP connections over STDIO (no tunnel required).
-Because ChatGPT manages servers via its in-app Settings UI instead of a
-JSON file on disk, configure it in ChatGPT Settings:
-
-1. Open ChatGPT Desktop -> Settings -> MCP Servers -> Add Server
-2. Enter the following parameters:
-   Name:              TechBot_Blender_MCP
-   Command to launch: uv (or full path: "${INSTALL_DIR}/venv/bin/python")
-   Arguments (enter each argument separately):
-     run
-     --no-project
-     --with
-     mcp<2,>=1.25.0
-     --with
-     pydantic>=2.0.0
-     --with
-     httpx>=0.25.0
-     python
-     -m
-     mcp_service.app
-     --transport
-     stdio
-     --bridge-port
-     ${BRIDGE_PORT}
-     --bridge-timeout
-     ${BRIDGE_TIMEOUT}
-   Environment variables:
-     PYTHONPATH:        ${INSTALL_DIR}/service
-     PYTHONUNBUFFERED:  1
-     UMCP_BRIDGE_PORT:  ${BRIDGE_PORT}
-   Working directory:   ${INSTALL_DIR}/service
-3. Click Save and connect. See docs/CHATGPT_INSTALLATION.md for details.
--------------------------------------------------------------------------------
-EOF
-        CHATGPT_STATUS="UNCONFIGURED (Manual In-App Configuration in ChatGPT Settings Required)"
+        log_info "Configuring ChatGPT Desktop at ${CLIENT_CHATGPT_CONFIG}..."
+        if merge_client_json "${CLIENT_CHATGPT_CONFIG}" "${VENV_PYTHON}" "${BRIDGE_PORT}" "${BRIDGE_TIMEOUT}" "${INSTALL_DIR}/service"; then
+            CONFIGURED_CLIENTS+=("ChatGPT Desktop")
+            CHATGPT_STATUS="CONFIGURED (${CLIENT_CHATGPT_CONFIG})"
+        fi
     fi
 }
 
@@ -1333,14 +1381,15 @@ EOF
 
 ### ChatGPT Desktop Status
 > **${CHATGPT_STATUS}**  
-> ChatGPT Desktop communicates over local STDIO pipes configured via ChatGPT in-app Settings (**Settings -> MCP Servers**).  
+> ChatGPT Desktop communicates over local STDIO pipes configured via `config.toml` and ChatGPT in-app Settings (**Settings -> MCP Servers**).  
 > Follow the verified instructions in [\`docs/CHATGPT_INSTALLATION.md\`](docs/CHATGPT_INSTALLATION.md).
 
 | Setting | Value |
 | :--- | :--- |
-| **Server Name** | \`TechBot_Blender_MCP\` |
-| **Command** | \`uv\` *(or \`${VENV_PYTHON}\`)* |
-| **Arguments** | \`run\`, \`--no-project\`, \`--with\`, \`mcp<2,>=1.25.0\`, \`--with\`, \`pydantic>=2.0.0\`, \`--with\`, \`httpx>=0.25.0\`, \`python\`, \`-m\`, \`mcp_service.app\`, \`--transport\`, \`stdio\`, \`--bridge-port\`, \`${BRIDGE_PORT}\`, \`--bridge-timeout\`, \`15.0\` |
+| **Server Name** | \`techbot-blender-mcp\` |
+| **Configuration Path** | \`${CLIENT_CHATGPT_CONFIG}\` |
+| **Command** | \`${VENV_PYTHON}\` |
+| **Arguments** | \`["-m", "mcp_service.app", "--transport", "stdio", "--bridge-port", "${BRIDGE_PORT}", "--bridge-timeout", "15.0"]\` |
 | **Environment Variables** | \`PYTHONPATH\`: \`${INSTALL_DIR}/service\`<br>\`PYTHONUNBUFFERED\`: \`1\`<br>\`UMCP_BRIDGE_PORT\`: \`${BRIDGE_PORT}\` |
 | **Working Directory** | \`${INSTALL_DIR}/service\` |
 

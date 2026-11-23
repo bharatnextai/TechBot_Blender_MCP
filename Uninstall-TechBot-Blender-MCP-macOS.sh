@@ -8,8 +8,9 @@ set -euo pipefail
 
 DEFAULT_INSTALL_DIR="${HOME}/Library/Application Support/TechBot_Blender_MCP"
 INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
-SELECTED_CLIENTS=("claude" "cursor" "antigravity")
+SELECTED_CLIENTS=("claude" "cursor" "antigravity" "chatgpt")
 WORKSPACE_PATHS=()
+CHATGPT_CONFIG_PATH=""
 BLENDER_PATH=""
 SKIP_BLENDER=0
 KEEP_LOGS=0
@@ -73,8 +74,9 @@ Usage: ./Uninstall-TechBot-Blender-MCP-macOS.sh [OPTIONS]
 
 Options:
   --install-dir <path>            Target directory for MCP service (default: '~/Library/Application Support/TechBot_Blender_MCP')
-  --clients <c1,c2,...>           Comma-separated AI clients to clean: claude,cursor,antigravity
+  --clients <c1,c2,...>           Comma-separated AI clients to clean: claude,cursor,antigravity,chatgpt
   --workspace-paths <w1,w2,...>   Workspace directories to clean workspace-level configs
+  --chatgpt-config-path <path>    Explicit path to ChatGPT/Codex config.toml
   --blender-path <path>           Explicit path to Blender.app or executable
   --skip-blender                  Skip removing extension from Blender
   --keep-logs                     Preserve logs in application directory
@@ -94,6 +96,8 @@ parse_args() {
                 IFS=',' read -r -a SELECTED_CLIENTS <<< "$2"; shift 2 ;;
             --workspace-paths)
                 IFS=',' read -r -a WORKSPACE_PATHS <<< "$2"; shift 2 ;;
+            --chatgpt-config-path)
+                CHATGPT_CONFIG_PATH="$2"; shift 2 ;;
             --blender-path)
                 BLENDER_PATH="$2"; shift 2 ;;
             --skip-blender)
@@ -193,7 +197,52 @@ remove_client_server_entry() {
 
     if [[ -n "${py_bin}" ]] && [[ -x "${py_bin}" ]]; then
         local res
-        res="$("${py_bin}" -c '
+        if [[ "${cfg_path}" == *.toml ]]; then
+            res="$("${py_bin}" -c '
+import os, re, sys
+
+config_path = sys.argv[1]
+server_key = "techbot-blender-mcp"
+
+if not os.path.isfile(config_path):
+    print("NO_FILE")
+    sys.exit(0)
+
+try:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
+        content = f.read()
+except Exception as exc:
+    print(f"PARSE_ERROR:{exc}")
+    sys.exit(1)
+
+lines = content.splitlines()
+out = []
+skip = False
+removed = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("["):
+        m = re.match(r"^\[\s*mcp_servers\.[\"'\x27]?techbot[-_]blender[-_]mcp[\"'\x27]?(\.|\s*\])", stripped)
+        if m:
+            skip = True
+            removed = True
+            continue
+        else:
+            skip = False
+    if not skip:
+        out.append(line)
+
+final_content = "\n".join(out).rstrip() + "\n"
+with open(config_path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(final_content)
+
+if removed:
+    print(f"REMOVED_KEY:{server_key} CLEAN_JSON_SUCCESS")
+else:
+    print(f"KEY_NOT_FOUND:{server_key} CLEAN_JSON_SUCCESS")
+' "${cfg_path}" 2>&1)"
+        else
+            res="$("${py_bin}" -c '
 import json, os, sys
 
 config_path = sys.argv[1]
@@ -243,9 +292,10 @@ with open(config_path, "w", encoding="utf-8") as f:
 
 print("CLEAN_JSON_SUCCESS")
 ' "${cfg_path}" 2>&1)"
+        fi
         log_success "Client config cleanup result: ${res}"
     else
-        log_warn "Python not available to clean JSON cleanly. Please remove 'techbot-blender-mcp' manually from ${cfg_path}"
+        log_warn "Python not available to clean config cleanly. Please remove 'techbot-blender-mcp' manually from ${cfg_path}"
     fi
 }
 
@@ -266,6 +316,9 @@ cleanup_ai_clients() {
             antigravity)
                 targets+=("${HOME}/.gemini/config/mcp_config.json")
                 targets+=("${HOME}/Library/Application Support/Antigravity/mcp_config.json")
+                ;;
+            chatgpt)
+                targets+=("${CHATGPT_CONFIG_PATH:-${HOME}/.codex/config.toml}")
                 ;;
         esac
     done
