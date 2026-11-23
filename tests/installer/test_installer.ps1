@@ -744,6 +744,60 @@ print("MERGE_JSON_SUCCESS")
         if ($baks.Count -eq 0) { throw "Uninstall backup file was not created!" }
     }
 
+    # --------------------------------------------------------------------------
+    # Test 15: Windows Store ChatGPT Desktop Detection
+    # --------------------------------------------------------------------------
+    Assert-Test "Windows Store ChatGPT Desktop detection via Appx, StartApps and WindowsApps" {
+        $alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\chatgpt-desktop.exe"
+        $appx = Get-AppxPackage -Name "*ChatGPT*" -ErrorAction SilentlyContinue
+        if (-not $appx) { $appx = Get-AppxPackage -Name "*OpenAI*" -ErrorAction SilentlyContinue }
+
+        if ($appx -or (Test-Path $alias)) {
+            $testScript = @"
+. '$installerScript'
+`$res = Detect-ChatGPTClient
+if (-not `$res.Installed) {
+    throw 'ChatGPT should have been detected as installed!'
+}
+if (-not `$res.ExecutablePath) {
+    throw 'ChatGPT executable path should have been populated!'
+}
+Write-Output 'DETECTED_OK'
+"@
+            $run = powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $testScript
+            if ($run -notmatch "DETECTED_OK") {
+                throw "Detect-ChatGPTClient failed to detect Windows Store app: $run"
+            }
+        }
+    }
+
+    # --------------------------------------------------------------------------
+    # Test 16: Safe Python Detection & 0-Byte WindowsApps Alias Handling
+    # --------------------------------------------------------------------------
+    Assert-Test "Safe Python detection skips 0-byte WindowsApps alias without crashing" {
+        $dummyStub = Join-Path $testDir "fake_python.exe"
+        New-Item -ItemType File -Path $dummyStub -Force | Out-Null
+        
+        $testScript = @"
+. '$installerScript'
+`$res = Get-PythonVersionSafe -ExePath '$dummyStub'
+if (`$res -ne `$null) {
+    throw '0-byte stub should have returned null!'
+}
+
+`$realPy = (Get-Command 'python.exe' | Select-Object -First 1).Source
+`$ver = Get-PythonVersionSafe -ExePath `$realPy
+if (-not `$ver -or [version]`$ver -lt [version]'3.10.0') {
+    throw 'Real python should have returned valid version >= 3.10!'
+}
+Write-Output 'SAFE_PY_OK'
+"@
+        $run = powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $testScript
+        if ($run -notmatch "SAFE_PY_OK") {
+            throw "Safe Python check failed: $run"
+        }
+    }
+
 } finally {
     Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Cleaned test sandbox: $testDir"

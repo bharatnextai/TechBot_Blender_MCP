@@ -64,13 +64,14 @@ To start the interactive multi-client installer:
 The interactive wizard will guide you through:
 1. **Mode Selection:** New install, repair/update, or reconfigure clients.
 2. **AI Client Selection:** Select one or multiple clients (Claude, Cursor, ChatGPT, Antigravity).
-3. **Deep Detection:** Automatically scans Windows Registry (32/64-bit), Start Menu, and standard paths for installed clients.
-4. **Location Confirmation:** Confirm or customize service and download cache directories.
-5. **Cryptographic Checksum Verification:** Validates SHA-256 against official sidecars prior to unpacking.
-6. **Blender Native Installation:** Headless registration of extension without disrupting active bridge listeners.
-7. **Safe Client Merging:** Timestamped backups and non-destructive JSON merges.
-8. **Smoke Verification:** Automated STDIO handshake and tool listing test.
-9. **Report Generation:** Generates `TechBot-Installation-Report.md`.
+3. **Deep Detection:** Automatically scans Windows Registry (32/64-bit), Microsoft Store Appx/MSIX packages (`chatgpt-desktop.exe`), Start Menu apps, and standard paths.
+4. **Location Confirmation:** Prompts for custom MCP service and download cache directories with default fallbacks.
+5. **Automatic Prerequisites:** Auto-installs Python 3.10+ (via winget or python.org), `uv`, and Blender if missing from PATH.
+6. **Cryptographic Checksum Verification:** Validates SHA-256 against official sidecars prior to unpacking.
+7. **Blender Native Installation:** Headless registration of extension (`--command extension install-file -r user_default -e`) without disrupting active bridge listeners.
+8. **Safe Client Merging:** Timestamped backups and non-destructive JSON merges.
+9. **Smoke Verification:** Automated STDIO handshake and tool listing test.
+10. **Report Generation:** Generates `TechBot-Installation-Report.md`.
 
 For detailed wizard stage descriptions, see [`docs/INTERACTIVE_INSTALLATION.md`](file:///D:/Blender-Ollama-Addon/blender-universal-mcp/docs/INTERACTIVE_INSTALLATION.md).
 

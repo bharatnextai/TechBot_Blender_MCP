@@ -566,20 +566,77 @@ function Detect-ChatGPTClient {
         Selected        = $false
     }
 
-    # 1. Search Registry
-    $regApps = Get-RegistryInstalledApps | Where-Object { $_.DisplayName -like "*ChatGPT*" }
+    # 1. Windows Store Package (MSIX / Appx) - Primary distribution on Windows 10/11
+    try {
+        $appxList = @(Get-AppxPackage -Name "*ChatGPT*" -ErrorAction SilentlyContinue)
+        if (-not $appxList -or $appxList.Count -eq 0) {
+            $appxList = @(Get-AppxPackage -Name "*OpenAI*" -ErrorAction SilentlyContinue)
+        }
+        foreach ($pkg in $appxList) {
+            if ($pkg.Name -like "*ChatGPT*" -or $pkg.Name -like "*Codex*" -or $pkg.PackageFamilyName -like "*OpenAI*") {
+                $info.Installed = $true
+                if ($pkg.Version -and $info.Version -eq "Not detected") {
+                    $info.Version = $pkg.Version
+                }
+                
+                # Check for standard WindowsApps execution alias
+                $aliasExe = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\chatgpt-desktop.exe"
+                if (Test-Path $aliasExe) {
+                    if ($aliasExe -notin $info.Candidates) { $info.Candidates += $aliasExe }
+                }
+                $aliasExe2 = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\ChatGPT.exe"
+                if (Test-Path $aliasExe2) {
+                    if ($aliasExe2 -notin $info.Candidates) { $info.Candidates += $aliasExe2 }
+                }
+
+                # Check inside package install location if accessible
+                if ($pkg.InstallLocation -and (Test-Path $pkg.InstallLocation)) {
+                    $candFiles = @(Get-ChildItem -Path $pkg.InstallLocation -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*chatgpt*" -or $_.Name -like "*codex*" })
+                    foreach ($cf in $candFiles) {
+                        if ($cf.FullName -notin $info.Candidates) { $info.Candidates += $cf.FullName }
+                    }
+                }
+            }
+        }
+    } catch { }
+
+    # 2. Windows Start Menu Apps (Get-StartApps)
+    try {
+        $startApps = @(Get-StartApps -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*ChatGPT*" -or $_.AppID -like "*OpenAI*" -or $_.AppID -like "*ChatGPT*" })
+        if ($startApps -and $startApps.Count -gt 0) {
+            $info.Installed = $true
+            if ($info.Version -eq "Not detected") {
+                $info.Version = "Windows Store App"
+            }
+            $aliasExe = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\chatgpt-desktop.exe"
+            if ((Test-Path $aliasExe) -and ($aliasExe -notin $info.Candidates)) {
+                $info.Candidates += $aliasExe
+            }
+        }
+    } catch { }
+
+    # 3. Search Registry
+    $regApps = Get-RegistryInstalledApps | Where-Object { $_.DisplayName -like "*ChatGPT*" -or $_.DisplayName -like "*OpenAI*" }
     foreach ($r in $regApps) {
         $info.Installed = $true
-        if ($r.DisplayVersion) { $info.Version = $r.DisplayVersion }
-        if ($r.InstallLocation -and (Test-Path (Join-Path $r.InstallLocation "ChatGPT.exe"))) {
-            $info.Candidates += (Join-Path $r.InstallLocation "ChatGPT.exe")
+        if ($r.DisplayVersion -and $info.Version -eq "Not detected") { $info.Version = $r.DisplayVersion }
+        if ($r.InstallLocation) {
+            foreach ($exeName in @("ChatGPT.exe", "chatgpt-desktop.exe", "ChatGPT Desktop.exe")) {
+                $p = Join-Path $r.InstallLocation $exeName
+                if ((Test-Path $p) -and ($p -notin $info.Candidates)) {
+                    $info.Candidates += $p
+                }
+            }
         }
     }
 
-    # 2. Search Standard Paths / Appx
+    # 4. Search Standard Paths / WindowsApps
     $stdPaths = @(
         (Join-Path $env:LOCALAPPDATA "Programs\ChatGPT\ChatGPT.exe"),
-        (Join-Path $env:ProgramFiles "ChatGPT\ChatGPT.exe")
+        (Join-Path $env:ProgramFiles "ChatGPT\ChatGPT.exe"),
+        (Join-Path $env:ProgramFiles "OpenAI\ChatGPT.exe"),
+        (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\chatgpt-desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\ChatGPT.exe")
     )
     foreach ($p in $stdPaths) {
         if (Test-Path $p) {
@@ -588,10 +645,19 @@ function Detect-ChatGPTClient {
         }
     }
 
-    $cmd = Get-Command "ChatGPT.exe" -ErrorAction SilentlyContinue
-    if ($cmd) {
+    # 5. Search PATH
+    foreach ($exeName in @("chatgpt-desktop.exe", "ChatGPT.exe", "chatgpt.exe")) {
+        $cmd = Get-Command $exeName -ErrorAction SilentlyContinue
+        if ($cmd) {
+            $info.Installed = $true
+            if ($cmd.Source -notin $info.Candidates) { $info.Candidates += $cmd.Source }
+        }
+    }
+
+    # 6. Search Start Menu Shortcuts (.lnk)
+    $links = Find-StartMenuShortcut -Pattern "ChatGPT"
+    if ($links -and $links.Count -gt 0) {
         $info.Installed = $true
-        if ($cmd.Source -notin $info.Candidates) { $info.Candidates += $cmd.Source }
     }
 
     if ($info.Candidates.Count -gt 0) {
@@ -601,6 +667,13 @@ function Detect-ChatGPTClient {
                 $v = (Get-Item $info.ExecutablePath).VersionInfo.ProductVersion
                 if ($v) { $info.Version = $v }
             } catch { }
+        }
+    } elseif ($info.Installed -and -not $info.ExecutablePath) {
+        $aliasExe = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\chatgpt-desktop.exe"
+        if (Test-Path $aliasExe) {
+            $info.ExecutablePath = $aliasExe
+        } else {
+            $info.ExecutablePath = "Windows Store Package (OpenAI / ChatGPT)"
         }
     }
 
@@ -740,16 +813,18 @@ function Confirm-LocationsWizard {
     }
 
     if (-not $NonInteractive) {
-        Write-Host "`n=== Installation Locations Confirmation ===" -ForegroundColor Magenta
-        Write-Host "1. MCP Service & Venv Directory:  $($TargetInstallDir.Value)" -ForegroundColor White
-        Write-Host "2. Release Download Cache Dir:     $($TargetDownloadDir.Value)" -ForegroundColor White
+        Write-Host "`n=== Installation & Download Locations ===" -ForegroundColor Magenta
+        Write-Host "Specify where TechBot Blender MCP service, virtual environment, and release downloads should be located:" -ForegroundColor White
         
-        $confirm = Read-UserChoice -PromptMessage "Keep default directories? (Y/n)" -DefaultChoice "Y"
-        if ($confirm.ToUpperInvariant() -eq "N") {
-            $newInstall = Read-UserChoice -PromptMessage "Enter MCP Service directory" -DefaultChoice $TargetInstallDir.Value
-            if ($newInstall) { $TargetInstallDir.Value = $newInstall }
-            $newDownload = Read-UserChoice -PromptMessage "Enter Release Download directory" -DefaultChoice (Join-Path $TargetInstallDir.Value "downloads")
-            if ($newDownload) { $TargetDownloadDir.Value = $newDownload }
+        $newInstall = Read-UserChoice -PromptMessage "Enter MCP Service & Installation folder" -DefaultChoice $TargetInstallDir.Value
+        if ($newInstall) { 
+            $TargetInstallDir.Value = $newInstall 
+        }
+
+        $defaultDl = if ($TargetDownloadDir.Value) { $TargetDownloadDir.Value } else { Join-Path $TargetInstallDir.Value "downloads" }
+        $newDownload = Read-UserChoice -PromptMessage "Enter Release Download Cache folder" -DefaultChoice $defaultDl
+        if ($newDownload) { 
+            $TargetDownloadDir.Value = $newDownload 
         }
 
         # Client scope selection
@@ -823,14 +898,153 @@ function Confirm-LocationsWizard {
 }
 
 # ==============================================================================
-# Environment Detection (Python, uv, Blender)
+# Environment Detection & Automatic Installation (Python, uv, Blender)
 # ==============================================================================
 
+function Update-SessionEnvironmentPath {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $env:Path = "$userPath;$machinePath"
+}
+
+function Get-PythonVersionSafe {
+    param([string]$ExePath)
+    if (-not $ExePath -or -not (Test-Path $ExePath)) {
+        return $null
+    }
+    # Filter out 0-byte Windows Store execution alias stubs
+    try {
+        $item = Get-Item $ExePath -ErrorAction SilentlyContinue
+        if ($item -and $item.Length -eq 0) {
+            return $null
+        }
+    } catch { }
+
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $ExePath
+        $psi.Arguments = "-c `"import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')`""
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdout = $proc.StandardOutput.ReadToEnd()
+        [void]$proc.WaitForExit(5000)
+        if ($proc.ExitCode -eq 0 -and $stdout) {
+            $verStr = $stdout.Trim()
+            return $verStr
+        }
+    } catch { }
+    return $null
+}
+
+function Find-PythonCandidate {
+    # 1. Search PATH
+    $pyCmdList = @(Get-Command "python.exe" -ErrorAction SilentlyContinue)
+    foreach ($pyCmd in $pyCmdList) {
+        if ($pyCmd -and $pyCmd.Source) {
+            $ver = Get-PythonVersionSafe -ExePath $pyCmd.Source
+            if ($ver -and [version]$ver -ge [version]"3.10.0") {
+                return [PSCustomObject]@{ Path = $pyCmd.Source; Version = $ver }
+            }
+        }
+    }
+
+    # 2. Search Standard Windows locations
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+        "C:\Program Files\Python312\python.exe",
+        "C:\Program Files\Python311\python.exe",
+        "C:\Program Files\Python310\python.exe",
+        "C:\Program Files\Python313\python.exe"
+    )
+    foreach ($cand in $candidates) {
+        if (Test-Path $cand) {
+            $ver = Get-PythonVersionSafe -ExePath $cand
+            if ($ver -and [version]$ver -ge [version]"3.10.0") {
+                return [PSCustomObject]@{ Path = $cand; Version = $ver }
+            }
+        }
+    }
+
+    # 3. Check Windows Python Launcher (py.exe)
+    $pyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        foreach ($tag in @("-3.12", "-3.11", "-3.10", "-3.13")) {
+            try {
+                $pyPath = & $pyLauncher.Source $tag -c "import sys; print(sys.executable)" 2>$null
+                if ($pyPath -and (Test-Path $pyPath.Trim())) {
+                    $ver = Get-PythonVersionSafe -ExePath $pyPath.Trim()
+                    if ($ver -and [version]$ver -ge [version]"3.10.0") {
+                        return [PSCustomObject]@{ Path = $pyPath.Trim(); Version = $ver }
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    return $null
+}
+
+function Install-PythonAutomatically {
+    Write-Log "Python 3.10+ was not found on this system." "WARN"
+    Write-Log "Automatically installing Python 3.12..." "INFO"
+
+    # Strategy 1: winget
+    $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Log "Installing Python 3.12 using Windows Package Manager (winget)..." "INFO"
+        try {
+            $p = Start-Process -FilePath $winget.Source -ArgumentList "install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -Wait -PassThru -NoNewWindow
+            Write-Log "winget finished with exit code $($p.ExitCode)" "INFO"
+        } catch {
+            Write-Log "winget execution failed: $_" "WARN"
+        }
+        Update-SessionEnvironmentPath
+        $cand = Find-PythonCandidate
+        if ($cand) {
+            Write-Log "Python 3.12 installed and verified via winget: $($cand.Path) (v$($cand.Version))" "SUCCESS"
+            return $cand
+        }
+    }
+
+    # Strategy 2: Direct official installer download from python.org
+    Write-Log "Downloading official Python 3.12 installer from python.org..." "INFO"
+    $pyInstallerUrl = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
+    $tempInstaller = Join-Path $env:TEMP "python-3.12.7-amd64.exe"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $pyInstallerUrl -OutFile $tempInstaller -UseBasicParsing
+        Write-Log "Executing silent Python installation..." "INFO"
+        $proc = Start-Process -FilePath $tempInstaller -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 SimpleInstall=1" -Wait -PassThru
+        Write-Log "Python installer completed with exit code $($proc.ExitCode)" "INFO"
+        Remove-Item -Path $tempInstaller -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Log "Direct Python installation failed: $_" "WARN"
+    }
+
+    Update-SessionEnvironmentPath
+    $cand = Find-PythonCandidate
+    if ($cand) {
+        Write-Log "Python 3.12 installed and verified: $($cand.Path) (v$($cand.Version))" "SUCCESS"
+        return $cand
+    }
+
+    throw "Automatic installation of Python 3.10+ could not be completed. Please install Python 3.10 or newer from https://www.python.org/downloads/."
+}
+
 function Find-PythonExecutable {
-    param([string]$ExplicitPath)
+    param(
+        [string]$ExplicitPath,
+        [switch]$SkipAutoInstall
+    )
     if ($ExplicitPath) {
         if (Test-Path $ExplicitPath) {
-            $ver = & $ExplicitPath -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
+            $ver = Get-PythonVersionSafe -ExePath $ExplicitPath
             if ($ver -and [version]$ver -ge [version]"3.10.0") {
                 Write-Log "Using specified Python: $ExplicitPath (v$ver)" "SUCCESS"
                 $script:ReportData.PythonExe = $ExplicitPath
@@ -844,49 +1058,61 @@ function Find-PythonExecutable {
         }
     }
 
-    $pyCmd = Get-Command "python.exe" -ErrorAction SilentlyContinue
-    if ($pyCmd) {
-        $ver = & $pyCmd.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
-        if ($ver -and [version]$ver -ge [version]"3.10.0") {
-            Write-Log "Found Python in PATH: $($pyCmd.Source) (v$ver)" "SUCCESS"
-            $script:ReportData.PythonExe = $pyCmd.Source
-            $script:ReportData.PythonVersion = $ver
-            return $pyCmd.Source
-        }
+    $cand = Find-PythonCandidate
+    if ($cand) {
+        Write-Log "Found Python: $($cand.Path) (v$($cand.Version))" "SUCCESS"
+        $script:ReportData.PythonExe = $cand.Path
+        $script:ReportData.PythonVersion = $cand.Version
+        return $cand.Path
     }
 
-    $candidates = @(
-        "C:\Program Files\Python310\python.exe",
-        "C:\Program Files\Python311\python.exe",
-        "C:\Program Files\Python312\python.exe",
-        "C:\Program Files\Python313\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
-    )
-    foreach ($cand in $candidates) {
-        if (Test-Path $cand) {
-            $ver = & $cand -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>$null
-            if ($ver -and [version]$ver -ge [version]"3.10.0") {
-                Write-Log "Found Python at standard location: $cand (v$ver)" "SUCCESS"
-                $script:ReportData.PythonExe = $cand
-                $script:ReportData.PythonVersion = $ver
-                return $cand
-            }
-        }
+    if ($SkipAutoInstall) {
+        throw "Python 3.10+ was not found on this system. Please install Python 3.10 or newer from python.org."
+    }
+
+    $installed = Install-PythonAutomatically
+    if ($installed) {
+        $script:ReportData.PythonExe = $installed.Path
+        $script:ReportData.PythonVersion = $installed.Version
+        return $installed.Path
     }
 
     throw "Python 3.10+ was not found on this system. Please install Python 3.10 or newer from python.org."
 }
 
-function Find-UvExecutable {
+function Install-UvAutomatically {
+    Write-Log "Installing uv package manager automatically..." "INFO"
+    $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+    if ($winget) {
+        try {
+            $p = Start-Process -FilePath $winget.Source -ArgumentList "install astral-sh.uv --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -Wait -PassThru -NoNewWindow
+            Update-SessionEnvironmentPath
+        } catch { }
+    }
+
+    # Check if installed
+    $cand = Find-UvCandidate
+    if ($cand) { return $cand }
+
+    # Fallback to official astral.sh install script
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Write-Log "Installing uv via official installer script..." "INFO"
+        Invoke-Expression (Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1")
+        Update-SessionEnvironmentPath
+    } catch {
+        Write-Log "Could not install uv via script: $_" "WARN"
+    }
+
+    $cand = Find-UvCandidate
+    return $cand
+}
+
+function Find-UvCandidate {
     $uvCmd = Get-Command "uv.exe" -ErrorAction SilentlyContinue
     if ($uvCmd) {
         $ver = & $uvCmd.Source --version 2>$null
-        Write-Log "Found uv package manager: $($uvCmd.Source) ($ver)" "SUCCESS"
-        $script:ReportData.UvExe = $uvCmd.Source
-        return $uvCmd.Source
+        return [PSCustomObject]@{ Path = $uvCmd.Source; Version = $ver }
     }
 
     $candidates = @(
@@ -894,12 +1120,31 @@ function Find-UvExecutable {
         "$env:USERPROFILE\.cargo\bin\uv.exe",
         "$env:LOCALAPPDATA\bin\uv.exe"
     )
-    foreach ($cand in $candidates) {
-        if (Test-Path $cand) {
-            $ver = & $cand --version 2>$null
-            Write-Log "Found uv package manager: $cand ($ver)" "SUCCESS"
-            $script:ReportData.UvExe = $cand
-            return $cand
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            $ver = & $c --version 2>$null
+            return [PSCustomObject]@{ Path = $c; Version = $ver }
+        }
+    }
+    return $null
+}
+
+function Find-UvExecutable {
+    param([switch]$SkipAutoInstall)
+
+    $cand = Find-UvCandidate
+    if ($cand) {
+        Write-Log "Found uv package manager: $($cand.Path) ($($cand.Version))" "SUCCESS"
+        $script:ReportData.UvExe = $cand.Path
+        return $cand.Path
+    }
+
+    if (-not $SkipAutoInstall) {
+        $installed = Install-UvAutomatically
+        if ($installed) {
+            Write-Log "Found uv package manager: $($installed.Path) ($($installed.Version))" "SUCCESS"
+            $script:ReportData.UvExe = $installed.Path
+            return $installed.Path
         }
     }
 
@@ -932,7 +1177,9 @@ function Find-BlenderExecutable {
         "$env:ProgramFiles\Blender Foundation\Blender 5.0\blender.exe",
         "$env:ProgramFiles\Blender Foundation\Blender 4.3\blender.exe",
         "$env:ProgramFiles\Blender Foundation\Blender 4.2\blender.exe",
-        "$env:ProgramFiles (x86)\Blender Foundation\Blender 5.2\blender.exe"
+        "$env:ProgramFiles (x86)\Blender Foundation\Blender 5.2\blender.exe",
+        "$env:LOCALAPPDATA\Programs\Blender Foundation\Blender 5.2\blender.exe",
+        "C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe"
     )
     foreach ($cand in $candidates) {
         if (Test-Path $cand) {
@@ -1763,8 +2010,39 @@ function Main {
         $blenderExe = Find-BlenderExecutable -ExplicitPath $BlenderPath
         if (-not $blenderExe) {
             Write-Log "Blender executable could not be located automatically." "WARN"
-            Write-Log "Please specify -BlenderPath '<path-to-blender.exe>' or run with -SkipBlender." "WARN"
-            throw "Blender 4.2+ / 5.2.2 LTS not found. Provide -BlenderPath or -SkipBlender."
+            if (-not $NonInteractive) {
+                Write-Host "`nBlender 4.2+ / 5.2.2 LTS was not found in standard paths." -ForegroundColor Yellow
+                Write-Host "  [1] Automatically install Blender via winget" -ForegroundColor Green
+                Write-Host "  [2] Specify path to blender.exe manually" -ForegroundColor Cyan
+                Write-Host "  [3] Skip Blender extension installation (configure MCP service & AI clients only)" -ForegroundColor White
+                $bChoice = Read-UserChoice -PromptMessage "Select option (1-3)" -DefaultChoice "1"
+                if ($bChoice -eq "1") {
+                    $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+                    if ($winget) {
+                        Write-Log "Installing Blender using Windows Package Manager (winget)..." "INFO"
+                        try {
+                            Start-Process -FilePath $winget.Source -ArgumentList "install BlenderFoundation.Blender --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -Wait -NoNewWindow
+                            Update-SessionEnvironmentPath
+                            $blenderExe = Find-BlenderExecutable
+                        } catch {
+                            Write-Log "Blender winget install failed: $_" "WARN"
+                        }
+                    }
+                } elseif ($bChoice -eq "2") {
+                    $manualB = Read-UserChoice -PromptMessage "Enter full path to blender.exe"
+                    if ($manualB -and (Test-Path $manualB)) {
+                        $blenderExe = $manualB
+                        $script:ReportData.BlenderExe = $manualB
+                    }
+                } else {
+                    $SkipBlender = $true
+                    Write-Log "Skipping Blender extension installation." "INFO"
+                }
+            }
+            if (-not $blenderExe -and -not $SkipBlender) {
+                Write-Log "Please specify -BlenderPath '<path-to-blender.exe>' or run with -SkipBlender." "WARN"
+                throw "Blender 4.2+ / 5.2.2 LTS not found. Provide -BlenderPath or -SkipBlender."
+            }
         }
     }
 

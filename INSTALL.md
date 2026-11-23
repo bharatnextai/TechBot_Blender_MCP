@@ -39,7 +39,14 @@ Save them in the same folder. The installer downloads the release packages itsel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-TechBot-Blender-MCP.ps1
 ```
 
-The wizard guides you through installation mode, client selection/detection, install and download locations, package verification, Blender extension deployment, service environment setup, client configuration, and a Markdown installation report.
+The wizard guides you through:
+1. **Mode Selection:** New install, repair/update, or reconfigure AI clients only.
+2. **AI Client Selection & Detection:** Automatically detects Claude Desktop, Cursor IDE, Antigravity IDE, and ChatGPT Desktop (including Microsoft Store MSIX/Appx packages and execution aliases).
+3. **Installation & Download Folders:** Explicitly prompts you for the MCP Service directory and Release Download cache directory (press Enter to accept recommended defaults).
+4. **Automatic Prerequisite Resolution:** Automatically detects Python 3.10+, `uv`, and Blender 5.2.2 LTS / 4.2+. If any prerequisite is missing, the installer can install it automatically via Windows Package Manager (`winget`) or official installers without aborting setup.
+5. **Checksum & Extension Deployment:** Cryptographically verifies release assets against official SHA-256 sidecars and registers the Blender extension safely into `user_default`.
+6. **Virtual Environment & Client Merge:** Sets up an isolated Python virtual environment and non-destructively merges client configurations with automatic timestamped backups.
+7. **Report:** Generates `TechBot-Installation-Report.md` summarizing all installed components and configuration paths.
 
 The default service install directory is:
 
