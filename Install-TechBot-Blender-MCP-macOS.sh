@@ -546,7 +546,7 @@ detect_all_clients() {
     CLIENT_CHATGPT_INSTALLED=0
     CLIENT_CHATGPT_VERSION="Not detected"
     CLIENT_CHATGPT_EXE=""
-    CLIENT_CHATGPT_CONFIG="Requires HTTPS / Secure MCP Tunnel (Manual/Custom Action)"
+    CLIENT_CHATGPT_CONFIG="In-App Settings: Settings -> MCP Servers (Local STDIO)"
     CLIENT_CHATGPT_SELECTED=0
 
     if [[ -d "/Applications/ChatGPT.app" ]]; then
@@ -1141,21 +1141,45 @@ configure_selected_ai_clients() {
 
     if [[ ${CLIENT_CHATGPT_SELECTED} -eq 1 ]]; then
         log_info "Processing ChatGPT Desktop integration..."
-        cat << 'EOF'
+        cat << EOF
 
 -------------------------------------------------------------------------------
-ChatGPT Desktop MCP Integration Notice:
-ChatGPT Desktop on macOS does not support standard local STDIO JSON configuration files.
-Status: UNCONFIGURED (Manual action or Secure HTTPS Tunnel required)
+ChatGPT Desktop Local MCP Integration (STDIO):
+ChatGPT Desktop supports local MCP connections over STDIO (no tunnel required).
+Because ChatGPT manages servers via its in-app Settings UI instead of a
+JSON file on disk, configure it in ChatGPT Settings:
 
-Supported Integration Options:
-1. Streamable HTTP Server with HTTPS Tunnel (Cloudflare Tunnel / ngrok):
-   Run: "${INSTALL_DIR}/venv/bin/python" -m mcp_service.app --transport streamable-http --port 8000 --bridge-port 9877 --auth-token "<YOUR_SECRET>"
-   Tunnel: cloudflared tunnel --url http://127.0.0.1:8000
-2. Custom GPT Action with OpenAPI/MCP Endpoint.
+1. Open ChatGPT Desktop -> Settings -> MCP Servers -> Add Server
+2. Enter the following parameters:
+   Name:              TechBot_Blender_MCP
+   Command to launch: uv (or full path: "${INSTALL_DIR}/venv/bin/python")
+   Arguments (enter each argument separately):
+     run
+     --no-project
+     --with
+     mcp<2,>=1.25.0
+     --with
+     pydantic>=2.0.0
+     --with
+     httpx>=0.25.0
+     python
+     -m
+     mcp_service.app
+     --transport
+     stdio
+     --bridge-port
+     ${BRIDGE_PORT}
+     --bridge-timeout
+     ${BRIDGE_TIMEOUT}
+   Environment variables:
+     PYTHONPATH:        ${INSTALL_DIR}/service
+     PYTHONUNBUFFERED:  1
+     UMCP_BRIDGE_PORT:  ${BRIDGE_PORT}
+   Working directory:   ${INSTALL_DIR}/service
+3. Click Save and connect. See docs/CHATGPT_INSTALLATION.md for details.
 -------------------------------------------------------------------------------
 EOF
-        CHATGPT_STATUS="UNCONFIGURED (Remote Streamable HTTP / HTTPS Tunnel Required)"
+        CHATGPT_STATUS="UNCONFIGURED (Manual In-App Configuration in ChatGPT Settings Required)"
     fi
 }
 
@@ -1309,7 +1333,16 @@ EOF
 
 ### ChatGPT Desktop Status
 > **${CHATGPT_STATUS}**  
-> ChatGPT Desktop does not communicate over local STDIO pipes. Run the service in Streamable HTTP mode with a secure tunnel (e.g., Cloudflare Tunnel / ngrok) to connect remote GPT actions.
+> ChatGPT Desktop communicates over local STDIO pipes configured via ChatGPT in-app Settings (**Settings -> MCP Servers**).  
+> Follow the verified instructions in [\`docs/CHATGPT_INSTALLATION.md\`](docs/CHATGPT_INSTALLATION.md).
+
+| Setting | Value |
+| :--- | :--- |
+| **Server Name** | \`TechBot_Blender_MCP\` |
+| **Command** | \`uv\` *(or \`${VENV_PYTHON}\`)* |
+| **Arguments** | \`run\`, \`--no-project\`, \`--with\`, \`mcp<2,>=1.25.0\`, \`--with\`, \`pydantic>=2.0.0\`, \`--with\`, \`httpx>=0.25.0\`, \`python\`, \`-m\`, \`mcp_service.app\`, \`--transport\`, \`stdio\`, \`--bridge-port\`, \`${BRIDGE_PORT}\`, \`--bridge-timeout\`, \`15.0\` |
+| **Environment Variables** | \`PYTHONPATH\`: \`${INSTALL_DIR}/service\`<br>\`PYTHONUNBUFFERED\`: \`1\`<br>\`UMCP_BRIDGE_PORT\`: \`${BRIDGE_PORT}\` |
+| **Working Directory** | \`${INSTALL_DIR}/service\` |
 
 ---
 

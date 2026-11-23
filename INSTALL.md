@@ -64,7 +64,7 @@ For unattended use, the script supports `-NonInteractive`, `-InstallMode`, `-Cli
 
 ### Client support and ChatGPT note
 
-The installer can configure local MCP client entries for Claude Desktop, Cursor IDE, and Antigravity IDE. ChatGPT Desktop is detected separately, but the script does **not** write a local STDIO configuration for it; its report marks it unconfigured and explains that a remote Streamable HTTP endpoint with a secure HTTPS tunnel is required. See the [ChatGPT connection guide](docs/CHATGPT_INSTALLATION.md) for the documented manual connection details.
+The installer can configure local MCP client entries for Claude Desktop, Cursor IDE, and Antigravity IDE automatically. ChatGPT Desktop is also detected and fully supports local STDIO connections; however, because ChatGPT Desktop manages server entries via its graphical settings menu (**Settings → MCP Servers**) rather than a JSON file on disk, the installer displays and reports the exact command, arguments, environment variables, and working directory to enter into ChatGPT Settings. See the [ChatGPT connection guide](docs/CHATGPT_INSTALLATION.md) for full step-by-step instructions.
 
 The installer backs up existing client configuration files before modifying them. Review the generated installation report and verify that existing unrelated MCP server entries remain present.
 

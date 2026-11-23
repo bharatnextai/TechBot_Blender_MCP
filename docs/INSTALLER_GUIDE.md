@@ -47,7 +47,7 @@
 | **Blender** | Blender 5.2.2 LTS (or 4.2+) | Must support native extension system (`bpy.ops.extensions`) |
 | **Python** | Python 3.10, 3.11, 3.12, 3.13 | Required for the external MCP service |
 | **Package Manager** | `uv` (Recommended) or `pip` | `uv` automatically accelerates venv creation and dependency installs |
-| **AI Clients** | Claude Desktop, Cursor IDE, Antigravity IDE | Optional: ChatGPT Desktop via Streamable HTTP tunnel |
+| **AI Clients** | Claude Desktop, Cursor IDE, Antigravity IDE, ChatGPT Desktop | ChatGPT Desktop configured via in-app Settings (STDIO) |
 
 > **macOS Users:** A native bash installer is provided for Apple Silicon and Intel Macs. See the [macOS Installation Guide](MACOS_INSTALLATION.md), [macOS Client Configuration](MACOS_CLIENT_CONFIGURATION.md), and [macOS Troubleshooting](MACOS_TROUBLESHOOTING.md).
 
