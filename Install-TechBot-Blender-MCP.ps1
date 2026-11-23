@@ -1414,29 +1414,142 @@ function Get-BlenderExtensionInstallArgs {
     return @("--command", "extension", "install-file", "-r", $Repo, "-e", $ExtensionZip)
 }
 
-function Verify-BlenderExtensionInstallation {
+function Find-BlenderUserDefaultDir {
     param(
-        [Parameter(Mandatory = $true)] [string]$UserDefaultDir,
-        [string]$ExtensionId = "universal_mcp"
+        [Parameter(Mandatory = $true)] [string]$BlenderExe
     )
 
-    $pkgDir = Join-Path $UserDefaultDir $ExtensionId
-    if (-not (Test-Path $pkgDir)) {
+    if (-not $BlenderExe -or -not (Test-Path $BlenderExe)) {
         return $null
     }
 
-    $manifest = Join-Path $pkgDir "blender_manifest.toml"
-    if (-not (Test-Path $manifest)) {
-        $manifest = Join-Path $pkgDir "manifest.toml"
+    # Strategy 1: Direct inquiry of Blender's extension repositories via embedded Python
+    try {
+        $pyCmd = "import bpy; [print('BLENDER_USER_DEFAULT:' + str(r.directory)) for r in bpy.context.preferences.extensions.repos if r.module == 'user_default']"
+        $prevEAP = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $out = (& $BlenderExe -b --python-expr $pyCmd 2>&1) | Out-String
+            if ($out -match 'BLENDER_USER_DEFAULT:(.+)') {
+                $dirCandidate = $Matches[1].Trim().Trim('"').Trim("'")
+                if ($dirCandidate) {
+                    return $dirCandidate
+                }
+            }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+    } catch { }
+
+    # Strategy 2: CLI --command extension repo-list (handling quoted and unquoted output safely)
+    try {
+        $prevEAP = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $repoOutput = (& $BlenderExe --command extension repo-list 2>&1) | Out-String
+            $capture = $false
+            foreach ($line in ($repoOutput -split '\r?\n')) {
+                if ($line -match '^\s*user_default:\s*$') {
+                    $capture = $true
+                    continue
+                }
+                if ($capture) {
+                    if ($line -match '^[a-zA-Z0-9_]+:\s*$') {
+                        break
+                    }
+                    if ($line -match 'directory:\s*"?([^"\r\n]+?)"?\s*$') {
+                        $dirCandidate = $Matches[1].Trim().Trim('"').Trim("'")
+                        if ($dirCandidate) {
+                            return $dirCandidate
+                        }
+                    }
+                }
+            }
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+    } catch { }
+
+    # Strategy 3: Standard APPDATA version directories
+    $blenderBase = Join-Path $env:APPDATA "Blender Foundation\Blender"
+    if (Test-Path $blenderBase) {
+        $versionDirs = Get-ChildItem -Path $blenderBase -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+' } | Sort-Object Name -Descending
+        foreach ($vd in $versionDirs) {
+            $cand = Join-Path $vd.FullName "extensions\user_default"
+            if (Test-Path $cand) {
+                return $cand
+            }
+        }
+        if ($versionDirs.Count -gt 0) {
+            return (Join-Path $versionDirs[0].FullName "extensions\user_default")
+        }
     }
 
-    if (Test-Path $manifest) {
-        return [PSCustomObject]@{
-            Verified     = $true
-            ExtensionId  = $ExtensionId
-            PackageDir   = $pkgDir
-            ManifestPath = $manifest
+    # Strategy 4: Portable Blender version folders adjacent to blender.exe
+    $blenderDir = Split-Path -Parent $BlenderExe
+    $portableVersions = Get-ChildItem -Path $blenderDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+' }
+    foreach ($pv in $portableVersions) {
+        $cand = Join-Path $pv.FullName "extensions\user_default"
+        return $cand
+    }
+
+    return $null
+}
+
+function Verify-BlenderExtensionInstallation {
+    param(
+        [string]$UserDefaultDir,
+        [string]$BlenderExe,
+        [string]$ExtensionId = "universal_mcp"
+    )
+
+    # Check 1: Explicit UserDefaultDir or repository path
+    if ($UserDefaultDir) {
+        $pkgDir = Join-Path $UserDefaultDir $ExtensionId
+        $manifest = Join-Path $pkgDir "blender_manifest.toml"
+        if (-not (Test-Path $manifest)) {
+            $manifest = Join-Path $pkgDir "manifest.toml"
         }
+        if ((Test-Path $pkgDir) -and (Test-Path $manifest)) {
+            return [PSCustomObject]@{
+                Verified     = $true
+                ExtensionId  = $ExtensionId
+                PackageDir   = $pkgDir
+                ManifestPath = $manifest
+            }
+        }
+        # If an explicit UserDefaultDir was specified and no BlenderExe was provided, do not probe host system
+        if (-not $BlenderExe) {
+            return $null
+        }
+    }
+
+    # Check 2: Direct verification via Blender's module resolver
+    if ($BlenderExe -and (Test-Path $BlenderExe)) {
+        try {
+            $prevEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $pyCheck = "import bpy, importlib.util; spec = importlib.util.find_spec('bl_ext.user_default.$ExtensionId'); print('BPY_EXT_PATH:' + (spec.origin if spec else ''))"
+                $checkOut = (& $BlenderExe -b --python-expr $pyCheck 2>&1) | Out-String
+                if ($checkOut -match 'BPY_EXT_PATH:(.+)') {
+                    $initFile = $Matches[1].Trim()
+                    if ($initFile -and (Test-Path $initFile)) {
+                        $pDir = Split-Path -Parent $initFile
+                        $manifest = Join-Path $pDir "blender_manifest.toml"
+                        if (-not (Test-Path $manifest)) { $manifest = Join-Path $pDir "manifest.toml" }
+                        return [PSCustomObject]@{
+                            Verified     = $true
+                            ExtensionId  = $ExtensionId
+                            PackageDir   = $pDir
+                            ManifestPath = $manifest
+                        }
+                    }
+                }
+            } finally {
+                $ErrorActionPreference = $prevEAP
+            }
+        } catch { }
     }
 
     return $null
@@ -1459,45 +1572,10 @@ function Install-BlenderExtension {
     }
 
     # Step 1: Discover user_default repository directory
-    $userDefaultDir = $null
-    try {
-        $repoOutput = & $BlenderExe --command extension repo-list 2>&1
-        $capture = $false
-        foreach ($line in ($repoOutput -split '\r?\n')) {
-            if ($line -match '^\s*user_default:\s*$') {
-                $capture = $true
-                continue
-            }
-            if ($capture) {
-                if ($line -match '^[a-zA-Z0-9_]+:\s*$') {
-                    break
-                }
-                if ($line -match 'directory:\s*"([^"]+)"') {
-                    $userDefaultDir = $Matches[1]
-                    break
-                }
-            }
-        }
-    } catch {
-        Write-Log "Notice: Could not query repository list via CLI: $_" "WARN"
-    }
-
-    if (-not $userDefaultDir) {
-        $blenderBase = Join-Path $env:APPDATA "Blender Foundation\Blender"
-        if (Test-Path $blenderBase) {
-            $versionDirs = Get-ChildItem -Path $blenderBase -Directory | Where-Object { $_.Name -match '^\d+\.\d+' } | Sort-Object Name -Descending
-            foreach ($vd in $versionDirs) {
-                $cand = Join-Path $vd.FullName "extensions\user_default"
-                if (Test-Path $cand) {
-                    $userDefaultDir = $cand
-                    break
-                }
-            }
-        }
-    }
+    $userDefaultDir = Find-BlenderUserDefaultDir -BlenderExe $BlenderExe
 
     # Step 2: Detect existing installation and preserve user preferences
-    $existing = if ($userDefaultDir) { Verify-BlenderExtensionInstallation -UserDefaultDir $userDefaultDir -ExtensionId "universal_mcp" } else { $null }
+    $existing = Verify-BlenderExtensionInstallation -UserDefaultDir $userDefaultDir -BlenderExe $BlenderExe -ExtensionId "universal_mcp"
     if ($existing -and $existing.Verified) {
         Write-Log "Detected existing 'universal_mcp' installation in: $($existing.PackageDir)" "INFO"
         Write-Log "Preserving existing user preferences during extension installation." "INFO"
@@ -1525,12 +1603,22 @@ function Install-BlenderExtension {
         }
 
         # Step 4: Verify installed extension ID universal_mcp and its package directory
-        $verifiedObj = if ($userDefaultDir) { Verify-BlenderExtensionInstallation -UserDefaultDir $userDefaultDir -ExtensionId "universal_mcp" } else { $null }
+        if (-not $userDefaultDir) {
+            $userDefaultDir = Find-BlenderUserDefaultDir -BlenderExe $BlenderExe
+        }
+
+        $verifiedObj = Verify-BlenderExtensionInstallation -UserDefaultDir $userDefaultDir -BlenderExe $BlenderExe -ExtensionId "universal_mcp"
         $listVerified = $false
         try {
-            $listOutput = & $BlenderExe --command extension list 2>&1 | Out-String
-            if ($listOutput -match 'universal_mcp') {
-                $listVerified = $true
+            $prevEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $listOutput = (& $BlenderExe --command extension list 2>&1) | Out-String
+                if ($listOutput -match 'universal_mcp') {
+                    $listVerified = $true
+                }
+            } finally {
+                $ErrorActionPreference = $prevEAP
             }
         } catch { }
 
@@ -1541,7 +1629,7 @@ function Install-BlenderExtension {
             throw "Extension verification failed: 'universal_mcp' package directory or manifest missing after install."
         }
 
-        $pkgPath = if ($verifiedObj) { $verifiedObj.PackageDir } else { (Join-Path $userDefaultDir "universal_mcp") }
+        $pkgPath = if ($verifiedObj) { $verifiedObj.PackageDir } elseif ($userDefaultDir) { (Join-Path $userDefaultDir "universal_mcp") } else { "user_default:universal_mcp" }
         Write-Log "Extension ID 'universal_mcp' verified in package directory: $pkgPath" "SUCCESS"
         Write-Log "Blender extension installed and enabled in repository 'user_default'." "SUCCESS"
         $script:ReportData.BlenderExtResult = "Installed & Enabled (Repository: user_default, ID: universal_mcp, Path: $pkgPath)"
